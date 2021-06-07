@@ -50,5 +50,5 @@ jobs:
                 uses: docker/build-push-action@v2
                 with:
                     file: test/container/${{ matrix.config.dockerfile }}
-                    tags: ghcr.io/dracutdevs/${{ matrix.config.tag }}
+                    tags: ghcr.io/${{ github.repository_owner}}/${{ matrix.config.tag }}
                     push: ${{ github.event_name == 'push' ||  github.event_name == 'schedule' }}
