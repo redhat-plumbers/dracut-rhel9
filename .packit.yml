@@ -1,55 +1,45 @@
+---
 # This file is part of dracut.
 # SPDX-License-Identifier: GPL-2.0-or-later
+#
+# vi:ts=2 sw=2 et:
+#
+# Docs: https://packit.dev/docs/
 
-# The name of the upstream package
+specfile_path: .packit_rpm/dracut.spec
+synced_files:
+  - .packit.yaml
+  - src: .packit_rpm/dracut.spec
+    dest: dracut.spec
 upstream_package_name: dracut
-
-# The upstream tag versioning scheme
+downstream_package_name: dracut
 upstream_tag_template: "{version}"
 
-# The URL of the upstream project
-upstream_project_url: https://github.com/dracutdevs/dracut
+actions:
+  post-upstream-clone:
+    # Use the CentOS Stream specfile
+    - "git clone https://gitlab.com/redhat/centos-stream/rpms/dracut .packit_rpm --depth=1"
+    # Drop the "sources" file so rebase-helper doesn't think we're a dist-git$
+    - "rm -fv .packit_rpm/sources"
 
-# Relative path to a spec file within the upstream repository
-specfile_path: pkgbuild/dracut.spec
-
-# Name of the downstream package
-downstream_package_name: dracut
-
-# The URL of the downstream project
-dist_git_base_url: https://src.fedoraproject.org/
-
-# Sync file(s) from upstream repo to dist-git
-synced_files:
-  # The dracut spec file is maintained upstream so we sync it downstream.
-  - dracut.spec
-  # We sync the packit file downstream be able to optionally use the sync-from-downstream command
-  - .packit.yaml
-
-# We want new releases to be automatically built on rawhide and have few jobs
-# on copr.
-create_pr: false
+# Available targets can be listed via `copr-cli list-chroots`
 jobs:
-- job: propose_downstream
-  trigger: release
+# Build test
+- job: copr_build
+  trigger: pull_request
   metadata:
-    dist_git_branches: main
+    targets:
+      - epel-8-x86_64
+      - epel-8-aarch64
+      # FIXME: change to CentOS 9 once it's available
+      - fedora-34-x86_64
+      - fedora-34-aarch64
+      - fedora-34-s390x
 
+# Run tests (via testing farm)
 - job: tests
   trigger: pull_request
   metadata:
     targets:
-      - fedora-rawhide
-
-- job: copr_build
-  trigger: pull_request
-  metadata:
-    targets:
-      - fedora-development
-
-- job: copr_build
-  trigger: commit
-  metadata:
-    targets:
-      - fedora-all
-      - fedora-development
+      # FIXME: change to CentOS 9 once it's available
+      - fedora-34-x86_64
