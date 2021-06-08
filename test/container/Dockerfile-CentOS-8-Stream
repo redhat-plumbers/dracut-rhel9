@@ -1,0 +1,51 @@
+FROM quay.io/centos/centos:stream8
+
+MAINTAINER https://github.com/dracutdevs/dracut
+
+ENV container docker
+LABEL RUN="docker run -it --name NAME --privileged --ipc=host --net=host --pid=host -e NAME=NAME -e IMAGE=IMAGE IMAGE"
+
+RUN echo 'export DRACUT_NO_XATTR=1 KVERSION=$(cd /lib/modules; ls -1 | tail -1)' > /etc/profile.d/dracut-test.sh
+
+# Install needed packages for the dracut CI container
+RUN dnf -y install epel-release && \
+    dnf -y install --enablerepo powertools --enablerepo epel --setopt=install_weak_deps=False \
+    qemu-kvm \
+    NetworkManager \
+    asciidoc \
+    bash-completion \
+    bzip2 \
+    cryptsetup \
+    dash \
+    dbus-daemon \
+    dhcp-client \
+    dhcp-server \
+    e2fsprogs \
+    gcc \
+    git \
+    iproute \
+    iputils \
+    iscsi-initiator-utils \
+    kbd \
+    kernel \
+    kmod-devel \
+    lvm2 \
+    make \
+    mdadm \
+    nfs-utils \
+    pigz \
+    python3-imgcreate \
+    rpm-build \
+    strace \
+    sudo \
+    tar \
+    tcpdump \
+    wget \
+    which \
+    xz \
+    && dnf -y update && dnf clean all
+
+RUN ln -sv /usr/libexec/qemu-kvm /usr/bin/qemu-kvm
+
+# Set default command
+CMD ["/usr/bin/bash"]
