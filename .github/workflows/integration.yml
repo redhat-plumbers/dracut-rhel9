@@ -79,3 +79,44 @@ jobs:
 
             -   name: "${{ matrix.container }} TEST-${{ matrix.test }}"
                 run: ./tools/test-github.sh "TEST-${{ matrix.test }}" ${{ matrix.test }}
+    centos-8-stream:
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        concurrency:
+            group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.container }}-${{ matrix.test }}
+            cancel-in-progress: true
+        strategy:
+            matrix:
+                container: [
+                        "centos:stream8",
+                ]
+                # Disabled tests (due to dropped packages in RHEL/CentOS):
+                # 03, 04, 15: requires btrfs
+                # 14: requires dmraid
+                # 30, 31, 35, 36: requires scsi-target-utils
+                test: [
+                        "01",
+                        "02",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "17",
+                        "20",
+                        "21",
+                        "40",
+                        "41",
+                        "98",
+                ]
+            fail-fast: false
+        container:
+            image: ghcr.io/${{ github.repository_owner }}/${{ matrix.container }}
+            options: "--privileged -v /dev:/dev"
+        steps:
+            -   name: "Checkout Repository"
+                uses: actions/checkout@v2
+                with:
+                    fetch-depth: 0
+
+            -   name: "${{ matrix.container }} TEST-${{ matrix.test }}"
+                run: ./tools/test-github.sh "TEST-${{ matrix.test }}" ${{ matrix.test }}

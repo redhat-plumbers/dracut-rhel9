@@ -1,0 +1,63 @@
+FROM quay.io/centos/centos:stream8
+
+MAINTAINER https://github.com/dracutdevs/dracut
+
+ENV container docker
+LABEL RUN="docker run -it --name NAME --privileged --ipc=host --net=host --pid=host -e NAME=NAME -e IMAGE=IMAGE IMAGE"
+
+RUN echo 'export DRACUT_NO_XATTR=1 KVERSION=$(cd /lib/modules; ls -1 | tail -1)' > /etc/profile.d/dracut-test.sh
+
+# FIXME: the mirrors were desynchronized at the time of writing, leading to several
+#        conflicts when installing dependencies below
+RUN sed -i -e 's/^mirrorlist=/#mirrorlist=/g' -e 's/^#baseurl=/baseurl=/g' /etc/yum.repos.d/*.repo
+
+# Install needed packages for the dracut CI container
+RUN dnf -y install epel-release && \
+    `# FIXME: this is required to work around a bug in e2fsprogs, remove when CentOS 8.5 is out` && \
+    dnf -y install dnf-plugins-core && \
+    dnf -y copr enable mrc0mmand/systemd-centos-ci-centos8 && \
+    dnf -y install e2fsprogs && \
+    `# End of FIXME` && \
+    dnf -y install --enablerepo powertools --enablerepo epel --setopt=install_weak_deps=False \
+    qemu-kvm \
+    NetworkManager \
+    asciidoc \
+    bash-completion \
+    bzip2 \
+    cryptsetup \
+    dash \
+    dbus-daemon \
+    dhcp-client \
+    dhcp-server \
+    e2fsprogs \
+    gcc \
+    git \
+    iproute \
+    iputils \
+    iscsi-initiator-utils \
+    kbd \
+    kernel \
+    kmod-devel \
+    lvm2 \
+    make \
+    mdadm \
+    nfs-utils \
+    pigz \
+    python3-imgcreate \
+    rpm-build \
+    strace \
+    sudo \
+    tar \
+    tcpdump \
+    wget \
+    which \
+    xz \
+    && dnf -y update && dnf clean all
+
+# CentOS 8 ships only qemu-kvm, but it disables the KVM accel when it's not
+# available
+RUN ln -sv /usr/libexec/qemu-kvm /usr/bin/qemu-kvm && \
+    ln -sv /usr/libexec/qemu-kvm /usr/bin/qemu-system-$(uname -m)
+
+# Set default command
+CMD ["/usr/bin/bash"]
