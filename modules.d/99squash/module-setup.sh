@@ -42,19 +42,19 @@ installpost() {
     # Install required modules and binaries for the squash image init script.
     if [[ $_busybox ]]; then
         inst "$_busybox" /usr/bin/busybox
-        for _i in sh echo mount modprobe mkdir switch_root grep; do
+        for _i in sh echo mount modprobe mkdir switch_root grep umount; do
             ln_r /usr/bin/busybox /usr/bin/$_i
         done
     else
-        DRACUT_RESOLVE_DEPS=1 inst_multiple sh mount modprobe mkdir switch_root grep
+        DRACUT_RESOLVE_DEPS=1 inst_multiple sh mount modprobe mkdir switch_root grep umount
     fi
 
     hostonly="" instmods "loop" "squashfs" "overlay"
     dracut_kernel_post
 
     # Install squash image init script.
-    ln -sfn /usr/bin "$initdir/bin"
-    ln -sfn /usr/sbin "$initdir/sbin"
+    ln_r /usr/bin /bin
+    ln_r /usr/sbin /sbin
     inst_simple "$moddir"/init-squash.sh /init
 }
 
