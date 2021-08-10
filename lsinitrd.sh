@@ -182,7 +182,8 @@ list_files() {
 
 list_squash_content() {
     SQUASH_IMG="squash-root.img"
-    SQUASH_TMPFILE="$TMPDIR/initrd.root.sqsh"
+    SQUASH_TMPFILE="$(mktemp -t --suffix=.root.sqsh lsinitrd.XXXXXX)"
+    trap "rm -f '$SQUASH_TMPFILE'" EXIT
 
     $CAT "$image" 2> /dev/null | cpio --extract --verbose --quiet --to-stdout -- \
         $SQUASH_IMG > "$SQUASH_TMPFILE" 2> /dev/null
