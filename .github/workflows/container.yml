@@ -33,7 +33,7 @@ jobs:
                     - { dockerfile: 'Dockerfile-Fedora-rawhide',    tag: 'fedora:rawhide' }
                     - { dockerfile: 'Dockerfile-OpenSuse-latest',   tag: 'opensuse:latest' }
                     - { dockerfile: 'Dockerfile-Arch',              tag: 'arch:latest' }
-                    - { dockerfile: 'Dockerfile-CentOS-8-Stream',   tag: 'centos:stream8' }
+                    - { dockerfile: 'Dockerfile-CentOS-9-Stream',   tag: 'centos:stream9' }
         steps:
             -   name: Check out the repo
                 uses: actions/checkout@v2

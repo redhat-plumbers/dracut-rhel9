@@ -79,7 +79,7 @@ jobs:
 
             -   name: "${{ matrix.container }} TEST-${{ matrix.test }}"
                 run: ./tools/test-github.sh "TEST-${{ matrix.test }}" ${{ matrix.test }}
-    centos-8-stream:
+    centos-9-stream:
         runs-on: ubuntu-latest
         timeout-minutes: 45
         concurrency:
@@ -88,7 +88,7 @@ jobs:
         strategy:
             matrix:
                 container: [
-                        "centos:stream8",
+                        "centos:stream9",
                 ]
                 # Disabled tests (due to dropped packages in RHEL/CentOS):
                 # 03, 04, 15: requires btrfs
