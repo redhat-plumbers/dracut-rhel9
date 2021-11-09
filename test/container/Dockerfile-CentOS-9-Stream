@@ -8,7 +8,7 @@ LABEL RUN="docker run -it --name NAME --privileged --ipc=host --net=host --pid=h
 RUN echo 'export DRACUT_NO_XATTR=1 KVERSION=$(cd /lib/modules; ls -1 | tail -1)' > /etc/profile.d/dracut-test.sh
 
 # Install needed packages for the dracut CI container
-RUN dnf -y install --enablerepo powertools --setopt=install_weak_deps=False \
+RUN dnf -y install --enablerepo crb --setopt=install_weak_deps=False \
     qemu-kvm \
     NetworkManager \
     asciidoc \
