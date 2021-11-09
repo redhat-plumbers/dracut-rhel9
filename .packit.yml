@@ -21,6 +21,8 @@ actions:
     - "git clone https://gitlab.com/redhat/centos-stream/rpms/dracut .packit_rpm --depth=1"
     # Drop the "sources" file so rebase-helper doesn't think we're a dist-git$
     - "rm -fv .packit_rpm/sources"
+    # Drop all patches (since they're already applied in this repository)
+    - "sed -ri '/^Patch[0-9]+:/d' .packit_rpm/dracut.spec"
 
 # Available targets can be listed via `copr-cli list-chroots`
 jobs:
