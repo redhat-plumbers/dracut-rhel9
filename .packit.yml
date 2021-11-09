@@ -29,17 +29,12 @@ jobs:
   trigger: pull_request
   metadata:
     targets:
-      - epel-8-x86_64
-      - epel-8-aarch64
-      # FIXME: change to CentOS 9 once it's available
-      - fedora-34-x86_64
-      - fedora-34-aarch64
-      - fedora-34-s390x
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
 
 # Run tests (via testing farm)
 - job: tests
   trigger: pull_request
   metadata:
     targets:
-      # FIXME: change to CentOS 9 once it's available
-      - fedora-34-x86_64
+      - centos-stream-9-x86_64
