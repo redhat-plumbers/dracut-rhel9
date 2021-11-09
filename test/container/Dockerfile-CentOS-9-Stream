@@ -8,14 +8,15 @@ LABEL RUN="docker run -it --name NAME --privileged --ipc=host --net=host --pid=h
 RUN echo 'export DRACUT_NO_XATTR=1 KVERSION=$(cd /lib/modules; ls -1 | tail -1)' > /etc/profile.d/dracut-test.sh
 
 # Install needed packages for the dracut CI container
+# FIXME: properly re-add dash once C9S EPEL is available
 RUN dnf -y install --enablerepo crb --setopt=install_weak_deps=False \
+    http://mirrors.kernel.org/fedora/releases/34/Everything/x86_64/os/Packages/d/dash-0.5.10.2-8.fc34.x86_64.rpm \
     qemu-kvm \
     NetworkManager \
     asciidoc \
     bash-completion \
     bzip2 \
     cryptsetup \
-    dash \
     dbus-daemon \
     dhcp-client \
     dhcp-server \
@@ -33,7 +34,6 @@ RUN dnf -y install --enablerepo crb --setopt=install_weak_deps=False \
     mdadm \
     nfs-utils \
     pigz \
-    python3-imgcreate \
     rpm-build \
     strace \
     sudo \
