@@ -10,10 +10,9 @@ check() {
         return 1
     }
 
-    # Only support resume if hibernation is currently on
-    # and no swap is mounted on a net device
+    # Only support resume if no swap is mounted on a net device
     [[ $hostonly ]] || [[ $mount_needs ]] && {
-        swap_on_netdevice || [[ -f /sys/power/resume && "$(cat /sys/power/resume)" == "0:0" ]] && return 255
+        swap_on_netdevice && return 255
     }
 
     return 0
