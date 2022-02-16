@@ -71,20 +71,17 @@ Requires: kmod
 Requires: sed
 Requires: xz
 Requires: gzip
+Requires: hardlink
+Requires: pigz
+Requires: kpartx
 
 %if 0%{?fedora} || 0%{?rhel}
-Recommends: memstrack
-Recommends: hardlink
-Recommends: pigz
-Recommends: kpartx
+Suggests: memstrack
 Requires: util-linux >= 2.21
 Requires: systemd >= 219
 Requires: systemd-udev >= 219
 Requires: procps-ng
 %else
-Requires: hardlink
-Requires: gzip
-Requires: kpartx
 Requires: udev > 166
 Requires: util-linux-ng >= 2.21
 %endif
