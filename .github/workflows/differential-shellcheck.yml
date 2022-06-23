@@ -1,7 +1,5 @@
 name: Differential ShellCheck
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -11,7 +9,11 @@ jobs:
 
     steps: 
       - name: Repository checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Differential ShellCheck
-        uses: redhat-plumbers-in-action/differential-shellcheck@v1
+        uses: redhat-plumbers-in-action/differential-shellcheck@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
