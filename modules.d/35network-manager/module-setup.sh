@@ -52,8 +52,8 @@ install() {
         inst_simple "$moddir"/nm-wait-online-initrd.service "$systemdsystemunitdir"/nm-wait-online-initrd.service
 
         # Adding default link
-        inst_multiple -o "${systemdutildir}/network/99-default.link"
-        [[ $hostonly ]] && inst_multiple -H -o "${systemdsystemconfdir}/network/*.link"
+        inst_multiple -o "${systemdnetwork}/99-default.link"
+        [[ $hostonly ]] && inst_multiple -H -o "${systemdnetworkconfdir}/*.link"
 
         $SYSTEMCTL -q --root "$initdir" enable nm-initrd.service
     fi
