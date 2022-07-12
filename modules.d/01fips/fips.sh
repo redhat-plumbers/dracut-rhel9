@@ -132,10 +132,17 @@ do_fips() {
                 if [ -e "/boot/vmlinuz-${KERNEL}" ]; then
                     BOOT_IMAGE="vmlinuz-${KERNEL}"
                 elif [ -d /boot/loader/entries ]; then
-                    bls=$(find /boot/loader/entries -name '*.conf' | sort -rV | sed -n "$((BOOT_IMAGE + 1))p")
-                    if [ -e "${bls}" ]; then
-                        BOOT_IMAGE=$(grep ^linux "${bls}" | cut -d' ' -f2)
-                    fi
+                    i=0
+                    # shellcheck disable=SC2012
+                    for bls in $(ls -d /boot/loader/entries/*.conf | sort -rV); do
+                        if [ "$i" -eq "${BOOT_IMAGE:-0}" ] && [ -r "$bls" ]; then
+                            BOOT_IMAGE="$(grep -e '^linux' "$bls" | grep -o ' .*$')"
+                            BOOT_IMAGE=${BOOT_IMAGE## }
+                            break
+                        fi
+
+                        i=$((i + 1))
+                    done
                 fi
             fi
 
