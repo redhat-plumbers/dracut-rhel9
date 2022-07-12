@@ -3,12 +3,12 @@ on:
     schedule:
         -  cron: '30 11 * * *'   # every day at 4:40
     push:
-        branches: [ master ]
+        branches: [ main ]
         paths:
             - 'test/container/**'
             - '.github/workflows/container.yml'
     pull_request:
-        branches: [ master ]
+        branches: [ main new-main ]
         paths:
             - 'test/container/**'
             - '.github/workflows/container.yml'
@@ -31,6 +31,7 @@ jobs:
                     - { dockerfile: 'Dockerfile-Fedora-latest',     tag: 'fedora:latest' }
                     - { dockerfile: 'Dockerfile-OpenSuse-latest',   tag: 'opensuse:latest' }
                     - { dockerfile: 'Dockerfile-Arch',              tag: 'arch:latest' }
+                    - { dockerfile: 'Dockerfile-CentOS-9-Stream',   tag: 'centos:stream9' }
                     - { dockerfile: 'Dockerfile-Debian',            tag: 'debian:latest' }
         steps:
             -   name: Check out the repo
@@ -49,5 +50,5 @@ jobs:
                 uses: docker/build-push-action@v2
                 with:
                     file: test/container/${{ matrix.config.dockerfile }}
-                    tags: ghcr.io/dracutdevs/${{ matrix.config.tag }}
+                    tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.config.tag }}
                     push: ${{ github.event_name == 'push' ||  github.event_name == 'schedule' }}

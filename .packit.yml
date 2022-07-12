@@ -1,0 +1,36 @@
+---
+# This file is part of dracut.
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# vi:ts=2 sw=2 et:
+#
+# Docs: https://packit.dev/docs/
+
+specfile_path: pkgbuild/dracut.spec
+synced_files:
+  - .packit.yaml
+upstream_package_name: dracut
+downstream_package_name: dracut
+upstream_tag_template: "{version}"
+
+actions:
+  post-upstream-clone:
+    # Use the current specfile
+    - "cp pkgbuild/dracut.spec ."
+
+# Available targets can be listed via `copr-cli list-chroots`
+jobs:
+# Build test
+- job: copr_build
+  trigger: pull_request
+  metadata:
+    targets:
+      - centos-stream-9-x86_64
+      - centos-stream-9-aarch64
+
+# Run tests (via testing farm)
+- job: tests
+  trigger: pull_request
+  metadata:
+    targets:
+      - centos-stream-9-x86_64
