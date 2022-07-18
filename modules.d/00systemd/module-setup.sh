@@ -194,6 +194,7 @@ install() {
 
     if ! [[ -e "$initdir/etc/machine-id" ]]; then
         : > "$initdir/etc/machine-id"
+        chmod 444 "$initdir/etc/machine-id"
     fi
 
     # install adm user/group for journald
