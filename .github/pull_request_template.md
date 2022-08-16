@@ -1,10 +1,5 @@
-This pull request changes...
+<description/>
 
-## Changes
+(cherry picked from commit ... )
 
-## Checklist
-- [ ] I have tested it locally
-- [ ] I have reviewed and updated any documentation if relevant
-- [ ] I am providing new code and test(s) for it
-
-Fixes #
+Resolves: #
