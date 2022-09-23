@@ -42,6 +42,7 @@ RUN apt-get update -y -qq && apt-get upgrade -y -qq && DEBIAN_FRONTEND=nonintera
     network-manager \
     nfs-common \
     open-iscsi \
+    parted \
     pigz \
     pkg-config \
     procps \
