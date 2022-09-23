@@ -33,8 +33,10 @@ RUN dnf -y install --enablerepo crb --setopt=install_weak_deps=False \
     make \
     mdadm \
     nfs-utils \
+    parted \
     pigz \
     rpm-build \
+    squashfs-tools \
     strace \
     sudo \
     tar \
