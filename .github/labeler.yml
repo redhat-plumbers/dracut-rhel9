@@ -50,9 +50,6 @@ bash:
   - changed-files:
     - any-glob-to-any-file: 'modules.d/00bash/*'
 
-bootchart:
-  - modules.d/00bootchart/*
-
 dash:
   - changed-files:
     - any-glob-to-any-file: 'modules.d/00dash/*'
@@ -344,9 +341,6 @@ qemu:
 qemu-net:
   - changed-files:
     - any-glob-to-any-file: 'modules.d/90qemu-net/*'
-
-stratis:
-  - modules.d/90stratis/*
 
 crypt-gpg:
   - changed-files:
