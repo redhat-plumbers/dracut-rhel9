@@ -56,6 +56,8 @@ installkernel() {
             "=drivers/tty/serial" \
             "=drivers/input/serio" \
             "=drivers/input/keyboard" \
+            "=drivers/nvdimm/nd_pmem" \
+            "=drivers/nvdimm/nd_btt" \
             "=drivers/pci/host" \
             "=drivers/pci/controller" \
             "=drivers/pinctrl" \
