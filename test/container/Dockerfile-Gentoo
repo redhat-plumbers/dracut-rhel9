@@ -1,0 +1,48 @@
+FROM docker.io/gentoo/portage:latest as portage
+
+# kernel and its dependencies in a separate builder
+FROM docker.io/gentoo/stage3:musl as kernel
+COPY --from=portage /var/db/repos/gentoo /var/db/repos/gentoo
+RUN emerge -qv sys-kernel/gentoo-kernel-bin
+
+FROM docker.io/gentoo/stage3:musl
+COPY --from=portage /var/db/repos/gentoo /var/db/repos/gentoo
+COPY --from=kernel /boot /boot
+COPY --from=kernel /lib/modules /lib/modules
+
+MAINTAINER https://github.com/dracutdevs/dracut
+
+ENV container docker
+LABEL RUN="docker run -it --name NAME --privileged --ipc=host --net=host --pid=host -e NAME=NAME -e IMAGE=IMAGE IMAGE"
+
+RUN echo 'export DRACUT_NO_XATTR=1 KVERSION=$(cd /lib/modules; ls -1 | tail -1)' > /etc/profile.d/dracut-test.sh
+
+# Only install `dmsetup`: attempting to install all of lvm2 fails due to missing kernel headers.
+RUN echo 'sys-fs/lvm2 device-mapper-only -thin' > /etc/portage/package.use/lvm2
+
+# workaround for https://bugs.gentoo.org/734022 whereby Gentoo does not support NFS4 with musl
+RUN echo 'net-fs/nfs-utils -nfsv4' > /etc/portage/package.use/nfs-utils
+
+RUN echo '>=sys-fs/lvm2-2.03.17-r1 lvm' > /etc/portage/package.use/dmraid
+
+# Install needed packages for the dracut CI container
+RUN emerge -qv \
+    app-arch/cpio \
+    app-emulation/qemu \
+    app-shells/dash \
+    net-fs/nfs-utils \
+    net-misc/dhcp \
+    sys-apps/busybox \
+    sys-block/nbd \
+    sys-block/parted \
+    sys-block/thin-provisioning-tools \
+    sys-fs/btrfs-progs \
+    sys-fs/dmraid \
+    sys-fs/lvm2 \
+    sys-fs/mdadm \
+    sys-fs/ntfs3g \
+    sys-fs/squashfs-tools \
+    && rm -rf /var/cache/* /usr/share/doc/* /usr/share/man/*
+
+# Set default command
+CMD ["/usr/bin/bash"]

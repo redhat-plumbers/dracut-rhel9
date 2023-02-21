@@ -2,13 +2,7 @@
 # -*- mode: shell-script; indent-tabs-mode: nil; sh-basic-offset: 4; -*-
 # ex: ts=8 sw=4 sts=4 et filetype=sh
 
-if [[ $NM ]]; then
-    USE_NETWORK="network-manager"
-    OMIT_NETWORK="network-legacy"
-else
-    USE_NETWORK="network-legacy"
-    OMIT_NETWORK="network-manager"
-fi
+[ -z "$USE_NETWORK" ] && USE_NETWORK="network-legacy"
 
 # shellcheck disable=SC2034
 TEST_DESCRIPTION="root filesystem on NFS with bridging/bonding/vlan with $USE_NETWORK"
@@ -17,8 +11,27 @@ KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
 #DEBUGFAIL="rd.shell rd.break"
-#DEBUGFAIL="rd.shell rd.break rd.debug"
 #SERIAL="tcp:127.0.0.1:9999"
+
+# Network topology:
+#
+#  .---------------------.    .---------------.
+#  |      SERVER-VM      |    |   CLIENT-VM   |
+#  |                     |    |               |
+#  |    (DHCP) net1  <------------>  net1     |
+#  |                     |    |               |
+#  |           net2  <------------>  net2     |
+#  |   vlan 1 <-|        |    |               |
+#  |   vlan 2 <-|        |    |               |
+#  |   vlan 3 <-|        |    |               |
+#  |   vlan 4 <-.        |    |               |
+#  |                     |    |               |
+#  |         / net3  <------------>  net3     |
+#  |  bond0 |            |    |               |
+#  |  (DHCP) \ net4  <------------>  net4     |
+#  |                     |    |               |
+#  |                     |  X----->  net5     |
+#  .---------------------.    .---------------.
 
 run_server() {
     # Start server first
@@ -35,7 +48,7 @@ run_server() {
         -device virtio-net-pci,netdev=n3,mac=52:54:01:12:34:59 \
         -hda "$TESTDIR"/server.ext3 \
         -serial "${SERIAL:-"file:$TESTDIR/server.log"}" \
-        -watchdog i6300esb -watchdog-action poweroff \
+        -device i6300esb -watchdog-action poweroff \
         -append "panic=1 oops=panic softlockup_panic=1 loglevel=7 root=LABEL=dracut rootfstype=ext3 rw console=ttyS0,115200n81 selinux=0 rd.debug" \
         -initrd "$TESTDIR"/initramfs.server \
         -pidfile "$TESTDIR"/server.pid -daemonize || return 1
@@ -59,38 +72,26 @@ run_server() {
 
 client_test() {
     local test_name="$1"
-    local do_vlan13="$2"
-    local cmdline="$3"
-    local check="$4"
+    local cmdline="$2"
+    local check="$3"
     local CONF
 
     echo "CLIENT TEST START: $test_name"
-
-    [ "$do_vlan13" != "yes" ] && unset do_vlan13
 
     # Need this so kvm-qemu will boot (needs non-/dev/zero local disk)
     if ! dd if=/dev/zero of="$TESTDIR"/client.img bs=1M count=1; then
         echo "Unable to make client sda image" 1>&2
         return 1
     fi
-    if [[ $do_vlan13 ]]; then
-        nic1=("-netdev" "socket,connect=127.0.0.1:12371,id=n1")
-        nic3=("-netdev" "socket,connect=127.0.0.1:12373,id=n3")
-    else
-        nic1=("-netdev" "hubport,id=n1,hubid=2")
-        nic3=("-netdev" "hubport,id=n3,hubid=3")
-    fi
 
     "$testdir"/run-qemu \
-        -netdev socket,connect=127.0.0.1:12370,id=s1 \
-        -netdev hubport,hubid=1,id=h1,netdev=s1 \
-        -netdev hubport,hubid=1,id=h2 -device virtio-net-pci,mac=52:54:00:12:34:01,netdev=h2 \
-        -netdev hubport,hubid=1,id=h3 -device virtio-net-pci,mac=52:54:00:12:34:02,netdev=h3 \
-        "${nic1[@]}" -device virtio-net-pci,mac=52:54:00:12:34:03,netdev=n1 \
-        -netdev socket,connect=127.0.0.1:12372,id=n2 -device virtio-net-pci,mac=52:54:00:12:34:04,netdev=n2 \
-        "${nic3[@]}" -device virtio-net-pci,mac=52:54:00:12:34:05,netdev=n3 \
+        -netdev socket,connect=127.0.0.1:12370,id=n1 -device virtio-net-pci,mac=52:54:00:12:34:01,netdev=n1 \
+        -netdev socket,connect=127.0.0.1:12371,id=n2 -device virtio-net-pci,mac=52:54:00:12:34:02,netdev=n2 \
+        -netdev socket,connect=127.0.0.1:12372,id=n3 -device virtio-net-pci,mac=52:54:00:12:34:03,netdev=n3 \
+        -netdev socket,connect=127.0.0.1:12373,id=n4 -device virtio-net-pci,mac=52:54:00:12:34:04,netdev=n4 \
+        -netdev hubport,id=n5,hubid=1 -device virtio-net-pci,mac=52:54:00:12:34:05,netdev=n5 \
         -hda "$TESTDIR"/client.img \
-        -watchdog i6300esb -watchdog-action poweroff \
+        -device i6300esb -watchdog-action poweroff \
         -append "
         panic=1 oops=panic softlockup_panic=1
         ifname=net1:52:54:00:12:34:01
@@ -98,7 +99,7 @@ client_test() {
         ifname=net3:52:54:00:12:34:03
         ifname=net4:52:54:00:12:34:04
         ifname=net5:52:54:00:12:34:05
-        $cmdline rd.net.timeout.dhcp=3 systemd.crash_reboot rd.debug
+        $cmdline rd.net.timeout.dhcp=30 systemd.crash_reboot
         $DEBUGFAIL rd.retry=5 rw console=ttyS0,115200n81 selinux=0 init=/sbin/init" \
         -initrd "$TESTDIR"/initramfs.testing || return 1
 
@@ -140,66 +141,64 @@ test_run() {
 }
 
 test_client() {
-    if [[ $NM ]]; then
-        EXPECT='net1 net3.0004 net3.3 vlan0001 vlan2 /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-* EOF '
-    else
-        EXPECT='net1 net3.0004 net3.3 vlan0001 vlan2 /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net1 # Generated by dracut initrd NAME="net1" HWADDR="52:54:00:12:34:01" DEVICE="net1" ONBOOT=yes NETBOOT=yes IPV6INIT=yes BOOTPROTO=dhcp TYPE=Ethernet /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net3.0004 # Generated by dracut initrd NAME="net3.0004" ONBOOT=yes NETBOOT=yes BOOTPROTO=none IPADDR="192.168.57.104" PREFIX="24" GATEWAY="192.168.57.1" TYPE=Vlan DEVICE="net3.0004" VLAN=yes PHYSDEV="net3" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net3.3 # Generated by dracut initrd NAME="net3.3" ONBOOT=yes NETBOOT=yes BOOTPROTO=none IPADDR="192.168.56.103" PREFIX="24" GATEWAY="192.168.56.1" TYPE=Vlan DEVICE="net3.3" VLAN=yes PHYSDEV="net3" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-vlan0001 # Generated by dracut initrd NAME="vlan0001" ONBOOT=yes NETBOOT=yes BOOTPROTO=none IPADDR="192.168.54.101" PREFIX="24" GATEWAY="192.168.54.1" TYPE=Vlan DEVICE="vlan0001" VLAN=yes PHYSDEV="net3" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-vlan2 # Generated by dracut initrd NAME="vlan2" ONBOOT=yes NETBOOT=yes BOOTPROTO=none IPADDR="192.168.55.102" PREFIX="24" GATEWAY="192.168.55.1" TYPE=Vlan DEVICE="vlan2" VLAN=yes PHYSDEV="net3" EOF '
+
+    ### TEST 1: VLANs
+    if [ "$USE_NETWORK" = network-legacy ]; then
+        NETCONF='ifcfg-net1 # Generated by dracut initrd NAME="net1" HWADDR="52:54:00:12:34:01" DEVICE="net1" ONBOOT=yes NETBOOT=yes IPV6INIT=yes BOOTPROTO=dhcp TYPE=Ethernet ifcfg-net2.0004 # Generated by dracut initrd NAME="net2.0004" ONBOOT=yes NETBOOT=yes BOOTPROTO=none IPADDR="192.168.57.104" PREFIX="24" GATEWAY="192.168.57.1" TYPE=Vlan DEVICE="net2.0004" VLAN=yes PHYSDEV="net2" ifcfg-net2.3 # Generated by dracut initrd NAME="net2.3" ONBOOT=yes NETBOOT=yes BOOTPROTO=none IPADDR="192.168.56.103" PREFIX="24" GATEWAY="192.168.56.1" TYPE=Vlan DEVICE="net2.3" VLAN=yes PHYSDEV="net2" ifcfg-vlan0001 # Generated by dracut initrd NAME="vlan0001" ONBOOT=yes NETBOOT=yes BOOTPROTO=none IPADDR="192.168.54.101" PREFIX="24" GATEWAY="192.168.54.1" TYPE=Vlan DEVICE="vlan0001" VLAN=yes PHYSDEV="net2" ifcfg-vlan2 # Generated by dracut initrd NAME="vlan2" ONBOOT=yes NETBOOT=yes BOOTPROTO=none IPADDR="192.168.55.102" PREFIX="24" GATEWAY="192.168.55.1" TYPE=Vlan DEVICE="vlan2" VLAN=yes PHYSDEV="net2" '
     fi
 
-    client_test "Multiple VLAN" \
-        "yes" \
+    client_test "VLANs" \
         "
-vlan=vlan0001:net3
-vlan=vlan2:net3
-vlan=net3.3:net3
-vlan=net3.0004:net3
+rd.dracut.test.num=1
+rd.dracut.test.net-module=$USE_NETWORK
+vlan=vlan0001:net2
+vlan=vlan2:net2
+vlan=net2.3:net2
+vlan=net2.0004:net2
 ip=net1:dhcp
 ip=192.168.54.101::192.168.54.1:24:test:vlan0001:none
 ip=192.168.55.102::192.168.55.1:24:test:vlan2:none
-ip=192.168.56.103::192.168.56.1:24:test:net3.3:none
-ip=192.168.57.104::192.168.57.1:24:test:net3.0004:none
+ip=192.168.56.103::192.168.56.1:24:test:net2.3:none
+ip=192.168.57.104::192.168.57.1:24:test:net2.0004:none
 rd.neednet=1
-root=nfs:192.168.50.1:/nfs/client bootdev=net1
+root=nfs:192.168.50.1:/nfs/client
+bootdev=net1
 " \
-        "$EXPECT" \
+        "net1 net2.0004 net2.3 vlan0001 vlan2 PING1=0 PING2=0 PING3=0 PING4=0 PING5=0 ${NETCONF}EOF " \
         || return 1
 
-    if [[ $NM ]]; then
-        EXPECT='bond0 /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-* EOF '
-    else
-        EXPECT='bond0 bond1 /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-bond0 # Generated by dracut initrd NAME="bond0" DEVICE="bond0" ONBOOT=yes NETBOOT=yes IPV6INIT=yes BOOTPROTO=dhcp BONDING_OPTS="" NAME="bond0" TYPE=Bond /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-bond1 # Generated by dracut initrd NAME="bond1" DEVICE="bond1" ONBOOT=yes NETBOOT=yes IPV6INIT=yes BOOTPROTO=dhcp BONDING_OPTS="" NAME="bond1" TYPE=Bond /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net1 # Generated by dracut initrd NAME="net1" HWADDR="52:54:00:12:34:01" TYPE=Ethernet ONBOOT=yes NETBOOT=yes SLAVE=yes MASTER="bond0" DEVICE="net1" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net2 # Generated by dracut initrd NAME="net2" HWADDR="52:54:00:12:34:02" TYPE=Ethernet ONBOOT=yes NETBOOT=yes SLAVE=yes MASTER="bond0" DEVICE="net2" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net4 # Generated by dracut initrd NAME="net4" HWADDR="52:54:00:12:34:04" TYPE=Ethernet ONBOOT=yes NETBOOT=yes SLAVE=yes MASTER="bond1" DEVICE="net4" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net5 # Generated by dracut initrd NAME="net5" TYPE=Ethernet ONBOOT=yes NETBOOT=yes SLAVE=yes MASTER="bond1" DEVICE="net5" EOF '
+    ### TEST 2: bond
+    if [ "$USE_NETWORK" = network-legacy ]; then
+        NETCONF='ifcfg-bond0 # Generated by dracut initrd NAME="bond0" DEVICE="bond0" ONBOOT=yes NETBOOT=yes IPV6INIT=yes BOOTPROTO=dhcp BONDING_OPTS="miimon=100" NAME="bond0" TYPE=Bond ifcfg-net3 # Generated by dracut initrd NAME="net3" TYPE=Ethernet ONBOOT=yes NETBOOT=yes SLAVE=yes MASTER="bond0" DEVICE="net3" ifcfg-net4 # Generated by dracut initrd NAME="net4" TYPE=Ethernet ONBOOT=yes NETBOOT=yes SLAVE=yes MASTER="bond0" DEVICE="net4" '
     fi
-
-    client_test "Multiple Bonds" \
-        "yes" \
+    client_test "Bond" \
         "
-bond=bond0:net1,net2:miimon=100
-bond=bond1:net4,net5:miimon=100
+rd.dracut.test.num=2
+rd.dracut.test.net-module=$USE_NETWORK
+bond=bond0:net3,net4:miimon=100
 ip=bond0:dhcp
-ip=bond1:dhcp
 rd.neednet=1
-root=nfs:192.168.50.1:/nfs/client bootdev=bond0
+root=nfs:192.168.51.1:/nfs/client
+bootdev=bond0
 " \
-        "$EXPECT" \
+        "bond0 PING1=0 NET3=0 NET4=0 ${NETCONF}EOF " \
         || return 1
 
-    if [[ $NM ]]; then
-        EXPECT='br0 br1 /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-* EOF '
-    else
-        EXPECT='br0 br1 /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-br0 # Generated by dracut initrd NAME="br0" DEVICE="br0" ONBOOT=yes NETBOOT=yes IPV6INIT=yes BOOTPROTO=dhcp TYPE=Bridge NAME="br0" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-br1 # Generated by dracut initrd NAME="br1" DEVICE="br1" ONBOOT=yes NETBOOT=yes IPV6INIT=yes BOOTPROTO=dhcp TYPE=Bridge NAME="br1" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net1 # Generated by dracut initrd NAME="net1" HWADDR="52:54:00:12:34:01" TYPE=Ethernet ONBOOT=yes NETBOOT=yes BRIDGE="br0" DEVICE="net1" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net2 # Generated by dracut initrd NAME="net2" HWADDR="52:54:00:12:34:02" TYPE=Ethernet ONBOOT=yes NETBOOT=yes BRIDGE="br0" DEVICE="net2" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net4 # Generated by dracut initrd NAME="net4" TYPE=Ethernet ONBOOT=yes NETBOOT=yes BRIDGE="br1" DEVICE="net4" /run/initramfs/state/etc/sysconfig/network-scripts/ifcfg-net5 # Generated by dracut initrd NAME="net5" TYPE=Ethernet ONBOOT=yes NETBOOT=yes BRIDGE="br1" DEVICE="net5" EOF '
+    ### TEST 3: bridge
+    if [ "$USE_NETWORK" = network-legacy ]; then
+        NETCONF='ifcfg-br0 # Generated by dracut initrd NAME="br0" DEVICE="br0" ONBOOT=yes NETBOOT=yes IPV6INIT=yes BOOTPROTO=dhcp TYPE=Bridge NAME="br0" ifcfg-net1 # Generated by dracut initrd NAME="net1" TYPE=Ethernet ONBOOT=yes NETBOOT=yes BRIDGE="br0" HWADDR="52:54:00:12:34:01" DEVICE="net1" ifcfg-net5 # Generated by dracut initrd NAME="net5" TYPE=Ethernet ONBOOT=yes NETBOOT=yes BRIDGE="br0" HWADDR="52:54:00:12:34:05" DEVICE="net5" '
     fi
-
-    client_test "Multiple Bridges" \
-        "no" \
+    client_test "Bridge" \
         "
-bridge=br0:net1,net2
-bridge=br1:net4,net5
+rd.dracut.test.num=3
+rd.dracut.test.net-module=$USE_NETWORK
+bridge=br0:net1,net5
 ip=br0:dhcp
-ip=br1:dhcp
 rd.neednet=1
-root=nfs:192.168.50.1:/nfs/client bootdev=br0
+root=nfs:192.168.50.1:/nfs/client
+bootdev=br0
 " \
-        "$EXPECT" \
+        "br0 PING1=0 NET1=0 NET5=0 ${NETCONF}EOF " \
         || return 1
 
     kill_server
@@ -250,7 +249,7 @@ test_setup() {
         [ -f /etc/netconfig ] && inst_multiple /etc/netconfig
         type -P dhcpd > /dev/null && inst_multiple dhcpd
         [ -x /usr/sbin/dhcpd3 ] && inst /usr/sbin/dhcpd3 /usr/sbin/dhcpd
-        instmods nfsd sunrpc ipv6 lockd af_packet 8021q ipvlan macvlan
+        instmods nfsd sunrpc ipv6 lockd af_packet 8021q bonding
         inst_simple /etc/os-release
         inst ./server-init.sh /sbin/init
         inst ./hosts /etc/hosts
@@ -258,7 +257,7 @@ test_setup() {
         inst ./dhcpd.conf /etc/dhcpd.conf
         inst_multiple -o {,/usr}/etc/nsswitch.conf {,/usr}/etc/rpc {,/usr}/etc/protocols
 
-        inst_multiple rpc.idmapd /etc/idmapd.conf
+        inst_multiple -o rpc.idmapd /etc/idmapd.conf
 
         inst_libdir_file 'libnfsidmap_nsswitch.so*'
         inst_libdir_file 'libnfsidmap/*.so*'
@@ -290,7 +289,7 @@ test_setup() {
         # shellcheck disable=SC1090
         . "$basedir"/dracut-init.sh
         inst_multiple sh shutdown poweroff stty cat ps ln ip \
-            mount dmesg mkdir cp ping grep ls sort dd
+            mount dmesg mkdir cp ping grep ls sort dd sed basename
         for _terminfodir in /lib/terminfo /etc/terminfo /usr/share/terminfo; do
             [[ -f ${_terminfodir}/l/linux ]] && break
         done
@@ -306,7 +305,7 @@ test_setup() {
         inst /etc/passwd /etc/passwd
         inst /etc/group /etc/group
 
-        inst_multiple rpc.idmapd /etc/idmapd.conf
+        inst_multiple -o rpc.idmapd /etc/idmapd.conf
         inst_libdir_file 'libnfsidmap_nsswitch.so*'
         inst_libdir_file 'libnfsidmap/*.so*'
         inst_libdir_file 'libnfsidmap*.so*'
@@ -341,7 +340,7 @@ test_setup() {
     # We do it this way so that we do not risk trashing the host mdraid
     # devices, volume groups, encrypted partitions, etc.
     "$basedir"/dracut.sh -l -i "$TESTDIR"/overlay / \
-        -m "bash udev-rules base rootfs-block fs-lib kernel-modules fs-lib qemu" \
+        -m "bash rootfs-block kernel-modules qemu" \
         -d "piix ide-gd_mod ata_piix ext3 sd_mod" \
         --nomdadmconf \
         --no-hostonly-cmdline -N \
@@ -369,7 +368,7 @@ test_setup() {
     # Make client's dracut image
     "$basedir"/dracut.sh -l -i "$TESTDIR"/overlay / \
         --no-early-microcode \
-        -o "plymouth ${OMIT_NETWORK}" \
+        -o "plymouth" \
         -a "debug ${USE_NETWORK}" \
         --no-hostonly-cmdline -N \
         -f "$TESTDIR"/initramfs.testing "$KVERSION" || return 1
@@ -379,13 +378,14 @@ test_setup() {
         export initdir="$TESTDIR"/overlay
         # shellcheck disable=SC1090
         . "$basedir"/dracut-init.sh
+        rm "$initdir"/etc/systemd/network/01-client.link
         inst_simple ./server.link /etc/systemd/network/01-server.link
         inst_hook pre-mount 99 ./wait-if-server.sh
     )
     # Make server's dracut image
     "$basedir"/dracut.sh -l -i "$TESTDIR"/overlay / \
         --no-early-microcode \
-        -m "udev-rules base rootfs-block fs-lib debug kernel-modules watchdog qemu network network-legacy" \
+        -m "rootfs-block debug kernel-modules watchdog qemu network network-legacy" \
         -d "ipvlan macvlan af_packet piix ide-gd_mod ata_piix ext3 sd_mod nfsv2 nfsv3 nfsv4 nfs_acl nfs_layout_nfsv41_files nfsd virtio-net i6300esb ib700wdt" \
         --no-hostonly-cmdline -N \
         -f "$TESTDIR"/initramfs.server "$KVERSION" || return 1

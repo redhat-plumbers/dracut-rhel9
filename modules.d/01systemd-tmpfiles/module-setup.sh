@@ -25,12 +25,10 @@ depends() {
 install() {
 
     # Excluding "$tmpfilesdir/home.conf", sets up /home /srv
-    # Excluding "$tmpfilesdir/portables.conf", belongs in seperated portables module
     # Excluding "$tmpfilesdir/journal-nocow.conf", requires spesific btrfs setup
     # Excluding "$tmpfilesdir/legacy.conf", belongs in seperated legacy module
     # Excluding "$tmpfilesdir/systemd-nologin.conf", belongs in seperated pam module
     # Excluding "$tmpfilesdir/systemd-nspawn.conf", belongs in seperated machined module
-    # Excluding "$tmpfilesdir/systemd-pstore.conf", belongs in seperated pstore module
     # Excluding "$tmpfilesdir/x11.conf", belongs in seperated x11 module
 
     inst_multiple -o \

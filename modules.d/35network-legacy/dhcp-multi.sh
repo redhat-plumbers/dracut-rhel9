@@ -21,6 +21,13 @@ do_dhclient() {
     _timeout=$(getarg rd.net.timeout.dhcp=)
     _DHCPRETRY=$(getargnum 1 1 1000000000 rd.net.dhcp.retry=)
 
+    if [ -n "$_timeout" ]; then
+        if ! (dhclient --help 2>&1 | grep -q -F -- '--timeout' 2> /dev/null); then
+            warn "rd.net.timeout.dhcp has no effect because dhclient does not implement the --timeout option"
+            unset _timeout
+        fi
+    fi
+
     while [ $_COUNT -lt "$_DHCPRETRY" ]; do
         info "Starting dhcp for interface $netif"
         dhclient "$arg" \
@@ -51,7 +58,7 @@ do_dhclient() {
         # or it finished execution but failed dhcp on that interface.
 
         if [ $retv -eq 127 ]; then
-            pid=$(cat /tmp/dhclient."$netif".pid)
+            read -r pid < /tmp/dhclient."$netif".pid
             info "PID $pid was not found by wait for $netif"
             if [ -e /tmp/dhclient."$netif".lease ]; then
                 info "PID $pid not found but DHCP successful on $netif"
@@ -109,7 +116,7 @@ if [ $ret -eq 0 ]; then
             # Kill all existing dhclient calls for other interfaces, since we
             # already got one successful interface
 
-            npid=$(cat /tmp/dhclient."$netif".pid)
+            read -r npid < /tmp/dhclient."$netif".pid
             pidlist=$(pgrep dhclient)
             for pid in $pidlist; do
                 [ "$pid" -eq "$npid" ] && continue

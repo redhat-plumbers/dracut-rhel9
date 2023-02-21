@@ -3,8 +3,7 @@
 PLYMOUTH_LOGO_FILE="/usr/share/pixmaps/system-logo-white.png"
 PLYMOUTH_THEME=$(plymouth-set-default-theme)
 
-inst_multiple plymouthd plymouth \
-    /etc/system-release
+inst_multiple plymouthd plymouth
 
 test -e "${PLYMOUTH_LOGO_FILE}" && inst_simple "${PLYMOUTH_LOGO_FILE}"
 
@@ -34,10 +33,10 @@ if [[ $hostonly ]]; then
 else
     for x in "$dracutsysrootdir"/usr/share/plymouth/themes/{text,details}/*; do
         [[ -f $x ]] || continue
-        THEME_DIR=$(dirname "${x#$dracutsysrootdir}")
+        THEME_DIR=$(dirname "${x#"$dracutsysrootdir"}")
         # shellcheck disable=SC2174
         mkdir -m 0755 -p "${initdir}/$THEME_DIR"
-        inst_multiple "${x#$dracutsysrootdir}"
+        inst_multiple "${x#"$dracutsysrootdir"}"
     done
     (
         cd "${initdir}"/usr/share/plymouth/themes || exit

@@ -22,7 +22,6 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#undef _FILE_OFFSET_BITS
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -83,6 +82,8 @@ FILE *logfile_f = NULL;
 static Hashmap *items = NULL;
 static Hashmap *items_failed = NULL;
 static Hashmap *modules_loaded = NULL;
+static Hashmap *modules_suppliers = NULL;
+static Hashmap *processed_suppliers = NULL;
 static regex_t mod_filter_path;
 static regex_t mod_filter_nopath;
 static regex_t mod_filter_symbol;
@@ -95,6 +96,13 @@ static bool arg_mod_filter_nosymbol = false;
 static bool arg_mod_filter_noname = false;
 
 static int dracut_install(const char *src, const char *dst, bool isdir, bool resolvedeps, bool hashdst);
+static int install_dependent_modules(struct kmod_ctx *ctx, struct kmod_list *modlist, Hashmap *suppliers_paths);
+
+static void item_free(char *i)
+{
+        assert(i);
+        free(i);
+}
 
 static inline void kmod_module_unrefp(struct kmod_module **p)
 {
@@ -145,6 +153,18 @@ static inline void fts_closep(FTS **p)
 
 #define _cleanup_globfree_ _cleanup_(globfree)
 
+static inline void destroy_hashmap(Hashmap **hashmap)
+{
+        void *i = NULL;
+
+        while ((i = hashmap_steal_first(*hashmap)))
+                item_free(i);
+
+        hashmap_free(*hashmap);
+}
+
+#define _cleanup_destroy_hashmap_ _cleanup_(destroy_hashmap)
+
 static size_t dir_len(char const *file)
 {
         size_t length;
@@ -162,39 +182,43 @@ static size_t dir_len(char const *file)
 static char *convert_abs_rel(const char *from, const char *target)
 {
         /* we use the 4*MAXPATHLEN, which should not overrun */
-        char relative_from[MAXPATHLEN * 4];
-        _cleanup_free_ char *realtarget = NULL;
-        _cleanup_free_ char *target_dir_p = NULL, *realpath_p = NULL;
-        const char *realfrom = from;
+        char buf[MAXPATHLEN * 4];
+        _cleanup_free_ char *realtarget = NULL, *realfrom = NULL, *from_dir_p = NULL;
+        _cleanup_free_ char *target_dir_p = NULL;
         size_t level = 0, fromlevel = 0, targetlevel = 0;
         int l;
         size_t i, rl, dirlen;
 
-        target_dir_p = strdup(target);
-        if (!target_dir_p)
-                return strdup(from);
-
-        dirlen = dir_len(target_dir_p);
-        target_dir_p[dirlen] = '\0';
-        realpath_p = realpath(target_dir_p, NULL);
-
-        if (realpath_p == NULL) {
-                log_warning("convert_abs_rel(): target '%s' directory has no realpath.", target);
-                return strdup(from);
+        dirlen = dir_len(from);
+        from_dir_p = strndup(from, dirlen);
+        if (!from_dir_p)
+                return strdup(from + strlen(destrootdir));
+        if (realpath(from_dir_p, buf) == NULL) {
+                log_warning("convert_abs_rel(): from '%s' directory has no realpath: %m", from);
+                return strdup(from + strlen(destrootdir));
         }
-
         /* dir_len() skips double /'s e.g. //lib64, so we can't skip just one
          * character - need to skip all leading /'s */
-        rl = strlen(target);
-        for (i = dirlen + 1; i < rl; ++i)
-                if (target_dir_p[i] != '/')
-                        break;
-        _asprintf(&realtarget, "%s/%s", realpath_p, &target_dir_p[i]);
+        for (i = dirlen + 1; from[i] == '/'; ++i)
+                ;
+        _asprintf(&realfrom, "%s/%s", buf, from + i);
+
+        dirlen = dir_len(target);
+        target_dir_p = strndup(target, dirlen);
+        if (!target_dir_p)
+                return strdup(from + strlen(destrootdir));
+        if (realpath(target_dir_p, buf) == NULL) {
+                log_warning("convert_abs_rel(): target '%s' directory has no realpath: %m", target);
+                return strdup(from + strlen(destrootdir));
+        }
+
+        for (i = dirlen + 1; target[i] == '/'; ++i)
+                ;
+        _asprintf(&realtarget, "%s/%s", buf, target + i);
 
         /* now calculate the relative path from <from> to <target> and
-           store it in <relative_from>
+           store it in <buf>
          */
-        relative_from[0] = 0;
         rl = 0;
 
         /* count the pathname elements of realtarget */
@@ -212,13 +236,13 @@ static char *convert_abs_rel(const char *from, const char *target)
                 if (realtarget[i] == '/')
                         level++;
 
-        /* add "../" to the relative_from path, until the common pathname is
+        /* add "../" to the buf path, until the common pathname is
            reached */
         for (i = level; i < targetlevel; i++) {
                 if (i != level)
-                        relative_from[rl++] = '/';
-                relative_from[rl++] = '.';
-                relative_from[rl++] = '.';
+                        buf[rl++] = '/';
+                buf[rl++] = '.';
+                buf[rl++] = '.';
         }
 
         /* set l to the next uncommon pathname element in realfrom */
@@ -227,17 +251,17 @@ static char *convert_abs_rel(const char *from, const char *target)
         /* skip next '/' */
         l++;
 
-        /* append the uncommon rest of realfrom to the relative_from path */
+        /* append the uncommon rest of realfrom to the buf path */
         for (i = level; i <= fromlevel; i++) {
                 if (rl)
-                        relative_from[rl++] = '/';
+                        buf[rl++] = '/';
                 while (realfrom[l] && realfrom[l] != '/')
-                        relative_from[rl++] = realfrom[l++];
+                        buf[rl++] = realfrom[l++];
                 l++;
         }
 
-        relative_from[rl] = 0;
-        return strdup(relative_from);
+        buf[rl] = 0;
+        return strdup(buf);
 }
 
 static int ln_r(const char *src, const char *dst)
@@ -325,28 +349,22 @@ static int cp(const char *src, const char *dst)
 
 normal_copy:
         pid = fork();
+        const char *preservation = (geteuid() == 0
+                                    && no_xattr == false) ? "--preserve=mode,xattr,timestamps,ownership" : "--preserve=mode,timestamps,ownership";
         if (pid == 0) {
-                if (geteuid() == 0 && no_xattr == false)
-                        execlp("cp", "cp", "--reflink=auto", "--sparse=auto", "--preserve=mode,xattr,timestamps,ownership", "-fL",
-                               src, dst, NULL);
-                else
-                        execlp("cp", "cp", "--reflink=auto", "--sparse=auto", "--preserve=mode,timestamps,ownership", "-fL", src,
-                               dst, NULL);
-                _exit(EXIT_FAILURE);
+                execlp("cp", "cp", "--reflink=auto", "--sparse=auto", preservation, "-fL", src, dst, NULL);
+                _exit(errno == ENOENT ? 127 : 126);
         }
 
-        while (waitpid(pid, &ret, 0) < 0) {
+        while (waitpid(pid, &ret, 0) == -1) {
                 if (errno != EINTR) {
-                        ret = -1;
-                        if (geteuid() == 0 && no_xattr == false)
-                                log_error("Failed: cp --reflink=auto --sparse=auto --preserve=mode,xattr,timestamps,ownership -fL %s %s",
-                                          src, dst);
-                        else
-                                log_error("Failed: cp --reflink=auto --sparse=auto --preserve=mode,timestamps,ownership -fL %s %s",
-                                          src, dst);
-                        break;
+                        log_error("ERROR: waitpid() failed: %m");
+                        return 1;
                 }
         }
+        ret = WIFSIGNALED(ret) ? 128 + WTERMSIG(ret) : WEXITSTATUS(ret);
+        if (ret != 0)
+                log_error("ERROR: 'cp --reflink=auto --sparse=auto %s -fL %s %s' failed with %d", preservation, src, dst, ret);
         log_debug("cp ret = %d", ret);
         return ret;
 }
@@ -358,23 +376,23 @@ static int library_install(const char *src, const char *lib)
         char *q, *clibdir;
         int r, ret = 0;
 
-        p = strdup(lib);
-
-        r = dracut_install(p, p, false, false, true);
+        r = dracut_install(lib, lib, false, false, true);
         if (r != 0)
-                log_error("ERROR: failed to install '%s' for '%s'", p, src);
+                log_error("ERROR: failed to install '%s' for '%s'", lib, src);
         else
-                log_debug("Lib install: '%s'", p);
+                log_debug("Lib install: '%s'", lib);
         ret += r;
 
         /* also install lib.so for lib.so.* files */
-        q = strstr(p, ".so.");
+        q = strstr(lib, ".so.");
         if (q) {
-                q[3] = '\0';
+                p = strndup(lib, q - lib + 3);
 
                 /* ignore errors for base lib symlink */
                 if (dracut_install(p, p, false, false, true) == 0)
                         log_debug("Lib install: '%s'", p);
+
+                free(p);
         }
 
         /* Also try to install the same library from one directory above
@@ -386,28 +404,20 @@ static int library_install(const char *src, const char *lib)
            libc.so.6 (libc6,64bit, OS ABI: Linux 2.6.32) => /lib64/libc.so.6
          */
 
-        free(p);
         p = strdup(lib);
 
-        pdir = dirname(p);
+        pdir = dirname_malloc(p);
         if (!pdir)
                 return ret;
 
-        pdir = strdup(pdir);
-        ppdir = dirname(pdir);
-        if (!ppdir)
+        ppdir = dirname_malloc(pdir);
+        /* only one parent directory, not HWCAP library */
+        if (!ppdir || streq(ppdir, "/"))
                 return ret;
 
-        ppdir = strdup(ppdir);
-        pppdir = dirname(ppdir);
+        pppdir = dirname_malloc(ppdir);
         if (!pppdir)
                 return ret;
-
-        pppdir = strdup(pppdir);
-        if (!pppdir)
-                return ret;
-
-        strcpy(p, lib);
 
         clibdir = streq(basename(ppdir), "glibc-hwcaps") ? pppdir : ppdir;
         clib = strjoin(clibdir, "/", basename(p), NULL);
@@ -431,19 +441,21 @@ static char *get_real_file(const char *src, bool fullyresolve)
         struct stat sb;
         ssize_t linksz;
         char linktarget[PATH_MAX + 1];
-        _cleanup_free_ char *fullsrcpath;
+        _cleanup_free_ char *fullsrcpath_a = NULL;
+        const char *fullsrcpath;
         _cleanup_free_ char *abspath = NULL;
 
         if (sysrootdirlen) {
                 if (strncmp(src, sysrootdir, sysrootdirlen) == 0) {
-                        fullsrcpath = strdup(src);
+                        fullsrcpath = src;
                 } else {
-                        _asprintf(&fullsrcpath, "%s/%s",
+                        _asprintf(&fullsrcpath_a, "%s/%s",
                                   (sysrootdirlen ? sysrootdir : ""),
                                   (src[0] == '/' ? src + 1 : src));
+                        fullsrcpath = fullsrcpath_a;
                 }
         } else {
-                fullsrcpath = strdup(src);
+                fullsrcpath = src;
         }
 
         log_debug("get_real_file('%s')", fullsrcpath);
@@ -471,15 +483,7 @@ static char *get_real_file(const char *src, bool fullyresolve)
         if (linktarget[0] == '/') {
                 _asprintf(&abspath, "%s%s", (sysrootdirlen ? sysrootdir : ""), linktarget);
         } else {
-                _cleanup_free_ char *fullsrcdir = strdup(fullsrcpath);
-
-                if (!fullsrcdir) {
-                        log_error("Out of memory!");
-                        exit(EXIT_FAILURE);
-                }
-
-                fullsrcdir[dir_len(fullsrcdir)] = '\0';
-                _asprintf(&abspath, "%s/%s", fullsrcdir, linktarget);
+                _asprintf(&abspath, "%.*s/%s", (int)dir_len(fullsrcpath), fullsrcpath, linktarget);
         }
 
         if (fullyresolve) {
@@ -500,12 +504,10 @@ static char *get_real_file(const char *src, bool fullyresolve)
 
 static int resolve_deps(const char *src)
 {
-        int ret = 0;
+        int ret = 0, err;
 
         _cleanup_free_ char *buf = NULL;
-        size_t linesize = LINE_MAX;
-        _cleanup_pclose_ FILE *fptr = NULL;
-        _cleanup_free_ char *cmd = NULL;
+        size_t linesize = LINE_MAX + 1;
         _cleanup_free_ char *fullsrcpath = NULL;
 
         fullsrcpath = get_real_file(src, true);
@@ -513,7 +515,7 @@ static int resolve_deps(const char *src)
         if (!fullsrcpath)
                 return 0;
 
-        buf = malloc0(LINE_MAX);
+        buf = malloc(linesize);
         if (buf == NULL)
                 return -errno;
 
@@ -523,11 +525,11 @@ static int resolve_deps(const char *src)
                 if (fd < 0)
                         return -errno;
 
-                ret = read(fd, buf, LINE_MAX);
+                ret = read(fd, buf, linesize - 1);
                 if (ret == -1)
                         return -errno;
 
-                buf[LINE_MAX - 1] = '\0';
+                buf[ret] = '\0';
                 if (buf[0] == '#' && buf[1] == '!') {
                         /* we have a shebang */
                         char *p, *q;
@@ -542,25 +544,28 @@ static int resolve_deps(const char *src)
                 }
         }
 
-        /* run ldd */
-        _asprintf(&cmd, "%s %s 2>&1", ldd, fullsrcpath);
-
-        log_debug("%s", cmd);
-
-        ret = 0;
-
-        fptr = popen(cmd, "r");
-        if (fptr == NULL) {
-                log_error("Error '%s' initiating pipe stream from '%s'", strerror(errno), cmd);
+        int fds[2];
+        FILE *fptr;
+        if (pipe2(fds, O_CLOEXEC) == -1 || (fptr = fdopen(fds[0], "r")) == NULL) {
+                log_error("ERROR: pipe stream initialization for '%s' failed: %m", ldd);
                 exit(EXIT_FAILURE);
         }
 
-        while (!feof(fptr)) {
-                char *p;
+        log_debug("%s %s", ldd, fullsrcpath);
+        pid_t ldd_pid;
+        if ((ldd_pid = fork()) == 0) {
+                dup2(fds[1], 1);
+                dup2(fds[1], 2);
+                putenv("LC_ALL=C");
+                execlp(ldd, ldd, fullsrcpath, (char *)NULL);
+                _exit(errno == ENOENT ? 127 : 126);
+        }
+        close(fds[1]);
 
-                memset(buf, 0, LINE_MAX);
-                if (getline(&buf, &linesize, fptr) <= 0)
-                        continue;
+        ret = 0;
+
+        while (getline(&buf, &linesize, fptr) >= 0) {
+                char *p;
 
                 log_debug("ldd: '%s'", buf);
 
@@ -571,7 +576,7 @@ static int resolve_deps(const char *src)
                 }
 
                 /* errors from cross-compiler-ldd */
-                if (strstr(buf, "unable to find sysroot") || strstr(buf, "command not found")) {
+                if (strstr(buf, "unable to find sysroot")) {
                         log_error("%s", buf);
                         ret += 1;
                         break;
@@ -583,7 +588,7 @@ static int resolve_deps(const char *src)
 
                 /* glibc */
                 if (strstr(buf, "cannot execute binary file"))
-                        break;
+                        continue;
 
                 if (strstr(buf, "not a dynamic executable"))
                         break;
@@ -623,19 +628,28 @@ static int resolve_deps(const char *src)
                 }
         }
 
-        return ret;
+        fclose(fptr);
+        while (waitpid(ldd_pid, &err, 0) == -1) {
+                if (errno != EINTR) {
+                        log_error("ERROR: waitpid() failed: %m");
+                        return 1;
+                }
+        }
+        err = WIFSIGNALED(err) ? 128 + WTERMSIG(err) : WEXITSTATUS(err);
+        /* ldd has error conditions we largely don't care about ("not a dynamic executable", &c.):
+           only error out on hard errors (ENOENT, ENOEXEC, signals) */
+        if (err >= 126) {
+                log_error("ERROR: '%s %s' failed with %d", ldd, fullsrcpath, err);
+                return err;
+        } else
+                return ret;
 }
 
 /* Install ".<filename>.hmac" file for FIPS self-checks */
 static int hmac_install(const char *src, const char *dst, const char *hmacpath)
 {
-        _cleanup_free_ char *srcpath = strdup(src);
-        _cleanup_free_ char *dstpath = strdup(dst);
         _cleanup_free_ char *srchmacname = NULL;
         _cleanup_free_ char *dsthmacname = NULL;
-
-        if (!(srcpath && dstpath))
-                return -ENOMEM;
 
         size_t dlen = dir_len(src);
 
@@ -649,16 +663,14 @@ static int hmac_install(const char *src, const char *dst, const char *hmacpath)
                 hmac_install(src, dst, "/lib64/hmaccalc");
         }
 
-        srcpath[dlen] = '\0';
-        dstpath[dir_len(dst)] = '\0';
         if (hmacpath) {
                 _asprintf(&srchmacname, "%s/%s.hmac", hmacpath, &src[dlen + 1]);
                 _asprintf(&dsthmacname, "%s/%s.hmac", hmacpath, &src[dlen + 1]);
         } else {
-                _asprintf(&srchmacname, "%s/.%s.hmac", srcpath, &src[dlen + 1]);
-                _asprintf(&dsthmacname, "%s/.%s.hmac", dstpath, &src[dlen + 1]);
+                _asprintf(&srchmacname, "%.*s/.%s.hmac", (int)dlen,         src, &src[dlen + 1]);
+                _asprintf(&dsthmacname, "%.*s/.%s.hmac", (int)dir_len(dst), dst, &src[dlen + 1]);
         }
-        log_debug("hmac cp '%s' '%s')", srchmacname, dsthmacname);
+        log_debug("hmac cp '%s' '%s'", srchmacname, dsthmacname);
         dracut_install(srchmacname, dsthmacname, false, false, true);
         return 0;
 }
@@ -722,11 +734,11 @@ static int dracut_mkdir(const char *src)
                                 return 1;
                         }
                 } else if (errno != ENOENT) {
-                        log_error("ERROR: stat '%s': %s", parent, strerror(errno));
+                        log_error("ERROR: stat '%s': %m", parent);
                         return 1;
                 } else {
                         if (mkdir(parent, 0755) < 0) {
-                                log_error("ERROR: mkdir '%s': %s", parent, strerror(errno));
+                                log_error("ERROR: mkdir '%s': %m", parent);
                                 return 1;
                         }
                 }
@@ -742,7 +754,7 @@ static int dracut_mkdir(const char *src)
 
 static int dracut_install(const char *orig_src, const char *orig_dst, bool isdir, bool resolvedeps, bool hashdst)
 {
-        struct stat sb, db;
+        struct stat sb;
         _cleanup_free_ char *fullsrcpath = NULL;
         _cleanup_free_ char *fulldstpath = NULL;
         _cleanup_free_ char *fulldstdir = NULL;
@@ -752,25 +764,24 @@ static int dracut_install(const char *orig_src, const char *orig_dst, bool isdir
         mode_t src_mode = 0;
         bool dst_exists = true;
         char *i = NULL;
-        _cleanup_free_ char *src;
-        _cleanup_free_ char *dst;
+        const char *src, *dst;
 
         if (sysrootdirlen) {
                 if (strncmp(orig_src, sysrootdir, sysrootdirlen) == 0) {
-                        src = strdup(orig_src + sysrootdirlen);
+                        src = orig_src + sysrootdirlen;
                         fullsrcpath = strdup(orig_src);
                 } else {
-                        src = strdup(orig_src);
+                        src = orig_src;
                         _asprintf(&fullsrcpath, "%s%s", sysrootdir, src);
                 }
                 if (strncmp(orig_dst, sysrootdir, sysrootdirlen) == 0)
-                        dst = strdup(orig_dst + sysrootdirlen);
+                        dst = orig_dst + sysrootdirlen;
                 else
-                        dst = strdup(orig_dst);
+                        dst = orig_dst;
         } else {
-                src = strdup(orig_src);
+                src = orig_src;
                 fullsrcpath = strdup(src);
-                dst = strdup(orig_dst);
+                dst = orig_dst;
         }
 
         log_debug("dracut_install('%s', '%s', %d, %d, %d)", src, dst, isdir, resolvedeps, hashdst);
@@ -820,14 +831,13 @@ static int dracut_install(const char *orig_src, const char *orig_dst, bool isdir
         } else {
 
                 /* check destination directory */
-                fulldstdir = strdup(fulldstpath);
+                fulldstdir = strndup(fulldstpath, dir_len(fulldstpath));
                 if (!fulldstdir) {
                         log_error("Out of memory!");
                         return 1;
                 }
-                fulldstdir[dir_len(fulldstdir)] = '\0';
 
-                ret = stat(fulldstdir, &db);
+                ret = access(fulldstdir, F_OK);
 
                 if (ret < 0) {
                         _cleanup_free_ char *dname = NULL;
@@ -838,11 +848,10 @@ static int dracut_install(const char *orig_src, const char *orig_dst, bool isdir
                         }
                         /* create destination directory */
                         log_debug("dest dir '%s' does not exist", fulldstdir);
-                        dname = strdup(dst);
+
+                        dname = strndup(dst, dir_len(dst));
                         if (!dname)
                                 return 1;
-
-                        dname[dir_len(dname)] = '\0';
                         ret = dracut_install(dname, dname, true, false, true);
 
                         if (ret != 0) {
@@ -888,12 +897,12 @@ static int dracut_install(const char *orig_src, const char *orig_dst, bool isdir
                                 return 1;
                         }
 
-                        if (lstat(abspath, &sb) != 0) {
+                        if (faccessat(AT_FDCWD, abspath, F_OK, AT_SYMLINK_NOFOLLOW) != 0) {
                                 log_debug("lstat '%s': %m", abspath);
                                 return 1;
                         }
 
-                        if (lstat(fulldstpath, &sb) != 0) {
+                        if (faccessat(AT_FDCWD, fulldstpath, F_OK, AT_SYMLINK_NOFOLLOW) != 0) {
                                 _cleanup_free_ char *absdestpath = NULL;
 
                                 _asprintf(&absdestpath, "%s/%s", destrootdir,
@@ -947,12 +956,6 @@ static int dracut_install(const char *orig_src, const char *orig_dst, bool isdir
         log_debug("dracut_install ret = %d", ret);
 
         return ret;
-}
-
-static void item_free(char *i)
-{
-        assert(i);
-        free(i);
 }
 
 static void usage(int status)
@@ -1084,10 +1087,10 @@ static int parse_argv(int argc, char *argv[])
                         arg_module = true;
                         break;
                 case 'D':
-                        destrootdir = strdup(optarg);
+                        destrootdir = optarg;
                         break;
                 case 'r':
-                        sysrootdir = strdup(optarg);
+                        sysrootdir = optarg;
                         sysrootdirlen = strlen(sysrootdir);
                         break;
                 case 'p':
@@ -1126,10 +1129,10 @@ static int parse_argv(int argc, char *argv[])
                         arg_mod_filter_noname = true;
                         break;
                 case 'L':
-                        logdir = strdup(optarg);
+                        logdir = optarg;
                         break;
                 case ARG_KERNELDIR:
-                        kerneldir = strdup(optarg);
+                        kerneldir = optarg;
                         break;
                 case ARG_FIRMWAREDIRS:
                         firmwaredirs = strv_split(optarg, ":");
@@ -1241,7 +1244,6 @@ static char **find_binary(const char *src)
         char *newsrc = NULL;
 
         STRV_FOREACH(q, pathdirs) {
-                struct stat sb;
                 char *fullsrcpath;
 
                 _asprintf(&newsrc, "%s/%s", *q, src);
@@ -1254,8 +1256,8 @@ static char **find_binary(const char *src)
                         continue;
                 }
 
-                if (lstat(fullsrcpath, &sb) != 0) {
-                        log_debug("stat(%s) != 0", fullsrcpath);
+                if (faccessat(AT_FDCWD, fullsrcpath, F_OK, AT_SYMLINK_NOFOLLOW) != 0) {
+                        log_debug("lstat(%s) != 0", fullsrcpath);
                         free(newsrc);
                         newsrc = NULL;
                         free(fullsrcpath);
@@ -1338,8 +1340,7 @@ static int install_all(int argc, char **argv)
 
                 } else {
                         if (strchr(argv[i], '*') == NULL) {
-                                _cleanup_free_ char *dest = strdup(argv[i]);
-                                ret = dracut_install(argv[i], dest, arg_createdir, arg_resolvedeps, true);
+                                ret = dracut_install(argv[i], argv[i], arg_createdir, arg_resolvedeps, true);
                         } else {
                                 _cleanup_free_ char *realsrc = NULL;
                                 _cleanup_globfree_ glob_t globbuf;
@@ -1351,11 +1352,9 @@ static int install_all(int argc, char **argv)
                                         size_t j;
 
                                         for (j = 0; j < globbuf.gl_pathc; j++) {
-                                                char *dest = strdup(globbuf.gl_pathv[j] + sysrootdirlen);
-                                                ret |=
-                                                        dracut_install(globbuf.gl_pathv[j] + sysrootdirlen, dest,
-                                                                       arg_createdir, arg_resolvedeps, true);
-                                                free(dest);
+                                                ret |= dracut_install(globbuf.gl_pathv[j] + sysrootdirlen,
+                                                                      globbuf.gl_pathv[j] + sysrootdirlen,
+                                                                      arg_createdir, arg_resolvedeps, true);
                                         }
                                 }
                         }
@@ -1373,9 +1372,8 @@ static int install_firmware_fullpath(const char *fwpath)
 {
         const char *fw = fwpath;
         _cleanup_free_ char *fwpath_compressed = NULL;
-        struct stat sb;
         int ret;
-        if (stat(fwpath, &sb) != 0) {
+        if (access(fwpath, F_OK) != 0) {
                 _asprintf(&fwpath_compressed, "%s.zst", fwpath);
                 if (access(fwpath_compressed, F_OK) != 0) {
                         strcpy(fwpath_compressed + strlen(fwpath) + 1, "xz");
@@ -1418,12 +1416,11 @@ static int install_firmware(struct kmod_module *mod)
                 ret = -1;
                 STRV_FOREACH(q, firmwaredirs) {
                         _cleanup_free_ char *fwpath = NULL;
-                        struct stat sb;
 
                         _asprintf(&fwpath, "%s/%s", *q, value);
 
-                        if ((strstr(value, "*") != 0 || strstr(value, "?") != 0 || strstr(value, "[") != 0)
-                            && stat(fwpath, &sb) != 0) {
+                        if (strpbrk(value, "*?[") != NULL
+                            && access(fwpath, F_OK) != 0) {
                                 size_t i;
                                 _cleanup_globfree_ glob_t globbuf;
 
@@ -1504,61 +1501,204 @@ static bool check_module_path(const char *path)
         return true;
 }
 
-static int install_dependent_modules(struct kmod_list *modlist)
+static int find_kmod_module_from_sysfs_node(struct kmod_ctx *ctx, const char *sysfs_node, int sysfs_node_len,
+                                            struct kmod_list **modules)
 {
-        struct kmod_list *itr = NULL;
+        char modalias_path[PATH_MAX];
+        if (snprintf(modalias_path, sizeof(modalias_path), "%.*s/modalias", sysfs_node_len,
+                     sysfs_node) >= sizeof(modalias_path))
+                return -1;
+
+        _cleanup_close_ int modalias_file = -1;
+        if ((modalias_file = open(modalias_path, O_RDONLY | O_CLOEXEC)) == -1)
+                return 0;
+
+        char alias[page_size()];
+        ssize_t len = read(modalias_file, alias, sizeof(alias));
+        alias[len - 1] = '\0';
+
+        return kmod_module_new_from_lookup(ctx, alias, modules);
+}
+
+static int find_modules_from_sysfs_node(struct kmod_ctx *ctx, const char *sysfs_node, Hashmap *modules)
+{
+        _cleanup_kmod_module_unref_list_ struct kmod_list *list = NULL;
+        struct kmod_list *l = NULL;
+
+        if (find_kmod_module_from_sysfs_node(ctx, sysfs_node, strlen(sysfs_node), &list) >= 0) {
+                kmod_list_foreach(l, list) {
+                        struct kmod_module *mod = kmod_module_get_module(l);
+                        char *module = strdup(kmod_module_get_name(mod));
+                        kmod_module_unref(mod);
+
+                        if (hashmap_put(modules, module, module) < 0)
+                                free(module);
+                }
+        }
+
+        return 0;
+}
+
+static void find_suppliers_for_sys_node(struct kmod_ctx *ctx, Hashmap *suppliers, const char *node_path_raw,
+                                        size_t node_path_len)
+{
+        char node_path[PATH_MAX];
+        char real_path[PATH_MAX];
+
+        memcpy(node_path, node_path_raw, node_path_len);
+        node_path[node_path_len] = '\0';
+
+        DIR *d;
+        struct dirent *dir;
+        while (realpath(node_path, real_path) != NULL && strcmp(real_path, "/sys/devices")) {
+                d = opendir(node_path);
+                if (d) {
+                        size_t real_path_len = strlen(real_path);
+                        while ((dir = readdir(d)) != NULL) {
+                                if (strstr(dir->d_name, "supplier:platform") != NULL) {
+                                        if (snprintf(real_path + real_path_len, sizeof(real_path) - real_path_len, "/%s/supplier",
+                                                     dir->d_name) < sizeof(real_path) - real_path_len) {
+                                                char *real_supplier_path = realpath(real_path, NULL);
+                                                if (real_supplier_path != NULL)
+                                                        if (hashmap_put(suppliers, real_supplier_path, real_supplier_path) < 0)
+                                                                free(real_supplier_path);
+                                        }
+                                }
+                        }
+                        closedir(d);
+                }
+                strncat(node_path, "/..", 3); // Also find suppliers of parents
+        }
+}
+
+static void find_suppliers(struct kmod_ctx *ctx)
+{
+        _cleanup_fts_close_ FTS *fts;
+        char *paths[] = { "/sys/devices/platform", NULL };
+        fts = fts_open(paths, FTS_NOSTAT | FTS_PHYSICAL, NULL);
+
+        for (FTSENT *ftsent = fts_read(fts); ftsent != NULL; ftsent = fts_read(fts)) {
+                if (strcmp(ftsent->fts_name, "modalias") == 0) {
+                        _cleanup_kmod_module_unref_list_ struct kmod_list *list = NULL;
+                        struct kmod_list *l;
+
+                        if (find_kmod_module_from_sysfs_node(ctx, ftsent->fts_parent->fts_path, ftsent->fts_parent->fts_pathlen, &list) < 0)
+                                continue;
+
+                        kmod_list_foreach(l, list) {
+                                _cleanup_kmod_module_unref_ struct kmod_module *mod = kmod_module_get_module(l);
+                                const char *name = kmod_module_get_name(mod);
+                                Hashmap *suppliers = hashmap_get(modules_suppliers, name);
+                                if (suppliers == NULL) {
+                                        suppliers = hashmap_new(string_hash_func, string_compare_func);
+                                        hashmap_put(modules_suppliers, strdup(name), suppliers);
+                                }
+
+                                find_suppliers_for_sys_node(ctx, suppliers, ftsent->fts_parent->fts_path, ftsent->fts_parent->fts_pathlen);
+                        }
+                }
+        }
+}
+
+static Hashmap *find_suppliers_paths_for_module(const char *module)
+{
+        return hashmap_get(modules_suppliers, module);
+}
+
+static int install_dependent_module(struct kmod_ctx *ctx, struct kmod_module *mod, Hashmap *suppliers_paths, int *err)
+{
         const char *path = NULL;
         const char *name = NULL;
+
+        path = kmod_module_get_path(mod);
+
+        if (path == NULL)
+                return 0;
+
+        if (check_hashmap(items_failed, path))
+                return -1;
+
+        if (check_hashmap(items, &path[kerneldirlen])) {
+                return 0;
+        }
+
+        name = kmod_module_get_name(mod);
+
+        if (arg_mod_filter_noname && (regexec(&mod_filter_noname, name, 0, NULL, 0) == 0)) {
+                return 0;
+        }
+
+        *err = dracut_install(path, &path[kerneldirlen], false, false, true);
+        if (*err == 0) {
+                _cleanup_kmod_module_unref_list_ struct kmod_list *modlist = NULL;
+                _cleanup_kmod_module_unref_list_ struct kmod_list *modpre = NULL;
+                _cleanup_kmod_module_unref_list_ struct kmod_list *modpost = NULL;
+                log_debug("dracut_install '%s' '%s' OK", path, &path[kerneldirlen]);
+                install_firmware(mod);
+                modlist = kmod_module_get_dependencies(mod);
+                *err = install_dependent_modules(ctx, modlist, suppliers_paths);
+                if (*err == 0) {
+                        *err = kmod_module_get_softdeps(mod, &modpre, &modpost);
+                        if (*err == 0) {
+                                int r;
+                                *err = install_dependent_modules(ctx, modpre, NULL);
+                                r = install_dependent_modules(ctx, modpost, NULL);
+                                *err = *err ? : r;
+                        }
+                }
+        } else {
+                log_error("dracut_install '%s' '%s' ERROR", path, &path[kerneldirlen]);
+        }
+
+        return 0;
+}
+
+static int install_dependent_modules(struct kmod_ctx *ctx, struct kmod_list *modlist, Hashmap *suppliers_paths)
+{
+        struct kmod_list *itr = NULL;
         int ret = 0;
 
         kmod_list_foreach(itr, modlist) {
                 _cleanup_kmod_module_unref_ struct kmod_module *mod = NULL;
                 mod = kmod_module_get_module(itr);
-                path = kmod_module_get_path(mod);
-
-                if (path == NULL)
-                        continue;
-
-                if (check_hashmap(items_failed, path))
+                if (install_dependent_module(ctx, mod, find_suppliers_paths_for_module(kmod_module_get_name(mod)), &ret))
                         return -1;
+        }
 
-                if (check_hashmap(items, path)) {
+        const char *supplier_path;
+        Iterator i;
+        HASHMAP_FOREACH(supplier_path, suppliers_paths, i) {
+                if (check_hashmap(processed_suppliers, supplier_path))
                         continue;
-                }
 
-                name = kmod_module_get_name(mod);
+                char *path = strdup(supplier_path);
+                hashmap_put(processed_suppliers, path, path);
 
-                if (arg_mod_filter_noname && (regexec(&mod_filter_noname, name, 0, NULL, 0) == 0)) {
-                        continue;
-                }
+                _cleanup_destroy_hashmap_ Hashmap *modules = hashmap_new(string_hash_func, string_compare_func);
+                find_modules_from_sysfs_node(ctx, supplier_path, modules);
 
-                ret = dracut_install(path, &path[kerneldirlen], false, false, true);
-                if (ret == 0) {
-                        _cleanup_kmod_module_unref_list_ struct kmod_list *modlist = NULL;
-                        _cleanup_kmod_module_unref_list_ struct kmod_list *modpre = NULL;
-                        _cleanup_kmod_module_unref_list_ struct kmod_list *modpost = NULL;
-                        log_debug("dracut_install '%s' '%s' OK", path, &path[kerneldirlen]);
-                        install_firmware(mod);
-                        modlist = kmod_module_get_dependencies(mod);
-                        ret = install_dependent_modules(modlist);
-                        if (ret == 0) {
-                                ret = kmod_module_get_softdeps(mod, &modpre, &modpost);
-                                if (ret == 0) {
-                                        int r;
-                                        ret = install_dependent_modules(modpre);
-                                        r = install_dependent_modules(modpost);
-                                        ret = ret ? : r;
+                _cleanup_destroy_hashmap_ Hashmap *suppliers = hashmap_new(string_hash_func, string_compare_func);
+                find_suppliers_for_sys_node(ctx, suppliers, supplier_path, strlen(supplier_path));
+
+                if (!hashmap_isempty(modules)) { // Supplier is a module
+                        const char *module;
+                        Iterator j;
+                        HASHMAP_FOREACH(module, modules, j) {
+                                _cleanup_kmod_module_unref_ struct kmod_module *mod = NULL;
+                                if (!kmod_module_new_from_name(ctx, module, &mod)) {
+                                        if (install_dependent_module(ctx, mod, suppliers, &ret))
+                                                return -1;
                                 }
                         }
-                } else {
-                        log_error("dracut_install '%s' '%s' ERROR", path, &path[kerneldirlen]);
+                } else { // Supplier is builtin
+                        install_dependent_modules(ctx, NULL, suppliers);
                 }
         }
 
         return ret;
 }
 
-static int install_module(struct kmod_module *mod)
+static int install_module(struct kmod_ctx *ctx, struct kmod_module *mod)
 {
         int ret = 0;
         _cleanup_kmod_module_unref_list_ struct kmod_list *modlist = NULL;
@@ -1608,15 +1748,16 @@ static int install_module(struct kmod_module *mod)
         }
         install_firmware(mod);
 
+        Hashmap *suppliers = find_suppliers_paths_for_module(name);
         modlist = kmod_module_get_dependencies(mod);
-        ret = install_dependent_modules(modlist);
+        ret = install_dependent_modules(ctx, modlist, suppliers);
 
         if (ret == 0) {
                 ret = kmod_module_get_softdeps(mod, &modpre, &modpost);
                 if (ret == 0) {
                         int r;
-                        ret = install_dependent_modules(modpre);
-                        r = install_dependent_modules(modpost);
+                        ret = install_dependent_modules(ctx, modpre, NULL);
+                        r = install_dependent_modules(ctx, modpost, NULL);
                         ret = ret ? : r;
                 }
         }
@@ -1727,6 +1868,9 @@ static int install_modules(int argc, char **argv)
         if (p != NULL)
                 kerneldirlen = p - abskpath;
 
+        modules_suppliers = hashmap_new(string_hash_func, string_compare_func);
+        find_suppliers(ctx);
+
         if (arg_hostonly) {
                 char *modalias_file;
                 modalias_file = getenv("DRACUT_KERNEL_MODALIASES");
@@ -1814,7 +1958,7 @@ static int install_modules(int argc, char **argv)
                         }
                         kmod_list_foreach(itr, modlist) {
                                 mod = kmod_module_get_module(itr);
-                                r = install_module(mod);
+                                r = install_module(ctx, mod);
                                 kmod_module_unref(mod);
                                 if ((r < 0) && !arg_optional) {
                                         if (!arg_silent)
@@ -1893,7 +2037,7 @@ static int install_modules(int argc, char **argv)
                                 }
                                 kmod_list_foreach(itr, modlist) {
                                         mod = kmod_module_get_module(itr);
-                                        r = install_module(mod);
+                                        r = install_module(ctx, mod);
                                         kmod_module_unref(mod);
                                         if ((r < 0) && !arg_optional) {
                                                 if (!arg_silent)
@@ -1944,7 +2088,7 @@ static int install_modules(int argc, char **argv)
                         }
                         kmod_list_foreach(itr, modlist) {
                                 mod = kmod_module_get_module(itr);
-                                r = install_module(mod);
+                                r = install_module(ctx, mod);
                                 kmod_module_unref(mod);
                                 if ((r < 0) && !arg_optional) {
                                         if (!arg_silent)
@@ -2029,7 +2173,6 @@ int main(int argc, char **argv)
                         log_error("Environment DESTROOTDIR or argument -D is not set!");
                         usage(EXIT_FAILURE);
                 }
-                destrootdir = strdup(destrootdir);
         }
 
         if (strcmp(destrootdir, "/") == 0) {
@@ -2038,21 +2181,20 @@ int main(int argc, char **argv)
         }
 
         i = destrootdir;
-        destrootdir = realpath(destrootdir, NULL);
-        if (!destrootdir) {
+        if (!(destrootdir = realpath(i, NULL))) {
                 log_error("Environment DESTROOTDIR or argument -D is set to '%s': %m", i);
                 r = EXIT_FAILURE;
-                goto finish;
+                goto finish2;
         }
-        free(i);
 
         items = hashmap_new(string_hash_func, string_compare_func);
         items_failed = hashmap_new(string_hash_func, string_compare_func);
+        processed_suppliers = hashmap_new(string_hash_func, string_compare_func);
 
-        if (!items || !items_failed || !modules_loaded) {
+        if (!items || !items_failed || !processed_suppliers || !modules_loaded) {
                 log_error("Out of memory");
                 r = EXIT_FAILURE;
-                goto finish;
+                goto finish1;
         }
 
         if (logdir) {
@@ -2062,7 +2204,7 @@ int main(int argc, char **argv)
                 if (logfile_f == NULL) {
                         log_error("Could not open %s for logging: %m", logfile);
                         r = EXIT_FAILURE;
-                        goto finish;
+                        goto finish1;
                 }
         }
 
@@ -2095,7 +2237,9 @@ int main(int argc, char **argv)
         if (arg_optional)
                 r = EXIT_SUCCESS;
 
-finish:
+finish1:
+        free(destrootdir);
+finish2:
         if (logfile_f)
                 fclose(logfile_f);
 
@@ -2108,11 +2252,23 @@ finish:
         while ((i = hashmap_steal_first(items_failed)))
                 item_free(i);
 
+        Hashmap *h;
+        while ((h = hashmap_steal_first(modules_suppliers))) {
+                while ((i = hashmap_steal_first(h))) {
+                        item_free(i);
+                }
+                hashmap_free(h);
+        }
+
+        while ((i = hashmap_steal_first(processed_suppliers)))
+                item_free(i);
+
         hashmap_free(items);
         hashmap_free(items_failed);
         hashmap_free(modules_loaded);
+        hashmap_free(modules_suppliers);
+        hashmap_free(processed_suppliers);
 
-        free(destrootdir);
         strv_free(firmwaredirs);
         strv_free(pathdirs);
         return r;

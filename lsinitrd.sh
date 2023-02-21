@@ -131,6 +131,8 @@ else
         image="/boot/efi/${MACHINE_ID}/${KERNEL_VERSION}/initrd"
     elif [[ -f /lib/modules/${KERNEL_VERSION}/initrd ]]; then
         image="/lib/modules/${KERNEL_VERSION}/initrd"
+    elif [[ -f /lib/modules/${KERNEL_VERSION}/initramfs.img ]]; then
+        image="/lib/modules/${KERNEL_VERSION}/initramfs.img"
     elif [[ -f /boot/initramfs-${KERNEL_VERSION}.img ]]; then
         image="/boot/initramfs-${KERNEL_VERSION}.img"
     elif [[ $MACHINE_ID ]] \
@@ -174,6 +176,8 @@ extract_files() {
     for f in "${!filenames[@]}"; do
         [[ $nofileinfo ]] || echo "initramfs:/$f"
         [[ $nofileinfo ]] || echo "========================================================================"
+        # shellcheck disable=SC2001
+        [[ $f == *"\\x"* ]] && f=$(echo "$f" | sed 's/\\x.\{2\}/????/g')
         $CAT "$image" 2> /dev/null | cpio --extract --verbose --quiet --to-stdout "$f" 2> /dev/null
         ((ret += $?))
         [[ $nofileinfo ]] || echo "========================================================================"
@@ -217,7 +221,9 @@ list_squash_content() {
 unpack_files() {
     if ((${#filenames[@]} > 0)); then
         for f in "${!filenames[@]}"; do
-            $CAT "$image" 2> /dev/null | cpio -id --quiet $verbose $f
+            # shellcheck disable=SC2001
+            [[ $f == *"\\x"* ]] && f=$(echo "$f" | sed 's/\\x.\{2\}/????/g')
+            $CAT "$image" 2> /dev/null | cpio -id --quiet $verbose "$f"
             ((ret += $?))
         done
     else
@@ -288,8 +294,8 @@ case $bin in
                 echo "Early CPIO image"
                 list_files
             fi
-            if [[ -d "$dracutbasedir/skipcpio" ]]; then
-                SKIP="$dracutbasedir/skipcpio/skipcpio"
+            if [[ -d "$dracutbasedir/src/skipcpio" ]]; then
+                SKIP="$dracutbasedir/src/skipcpio/skipcpio"
             else
                 SKIP="$dracutbasedir/skipcpio"
             fi

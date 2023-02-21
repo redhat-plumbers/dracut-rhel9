@@ -1,11 +1,12 @@
 # Dracut Developer Guidelines
 
+Please make sure to follow our [Contribution Guidelines](../CONTRIBUTING.md).
+
 ## git
 
-Currently dracut lives on github.com and kernel.org.
+Currently dracut lives on github.com.
 
 * https://github.com/dracutdevs/dracut.git
-* https://git.kernel.org/pub/scm/boot/dracut/dracut.git
 
 Pull requests should be filed preferably on github nowadays.
 
@@ -141,7 +142,7 @@ dracut_install_dir/modules.d/
 	 This function of module-setup.sh is called to install all
 	 non-kernel files. dracut supplies several install functions that are
 	 specialized for different file types.  Browse through dracut-functions
-	 fore more details.  dracut also provides a $moddir variable if you
+	 for more details.  dracut also provides a $moddir variable if you
 	 need to install a file from the module directory, such as an initrd
 	 hook, a udev rule, or a specialized executable.
 

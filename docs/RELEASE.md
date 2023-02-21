@@ -27,44 +27,22 @@ This documents contains the necessary steps to conduct a successful release.
 4. Check in AUTHORS and NEWS.md
 
    ```console
-   $ git ci -m "docs: update NEWS.md and AUTHORS" NEWS.md AUTHORS
+   $ git commit -m "docs: update NEWS.md and AUTHORS" NEWS.md AUTHORS
+   $ git push origin master
    ```
 
-5. Tag the release and push
+5. Tag the release, validate the tag and push
 
    ```console
-   $ VERSION=052
-   $ git tag -s "$VERSION"
+   $ git tag -s 060
+   $ git tag -v 060
    $ git push --tags
    ```
 
-   Add the section from `NEWS.md` to the git tag message.
+   Add the section from `NEWS.md` to the git tag message excluding the Rendered
+   view entry.
 
-6. Push git to kernel.org
-
-   With:
-   ```console
-   $ git remote add kernelorg ssh://gitolite@ra.kernel.org/pub/scm/boot/dracut/dracut.git
-   ```
-
-   Push to kernel.org git:
-   ```console
-   $ git push --atomic kernelorg master "$VERSION"
-   ```
-
-
-7. Sign and upload tarballs to kernel.org
-
-   ```console
-   $ make upload
-   ```
-
-   This requires `kup` and a kernel.org account.
-   Wait until the tarballs are synced to http://www.kernel.org/pub/linux/utils/boot/dracut/ .
-
-8. Create a new release on github (https://github.com/dracutdevs/dracut/releases/new)
+6. Create a new release on github (https://github.com/dracutdevs/dracut/releases/new)
    - Add the section from `NEWS.md` to the release.
-   - Attach the tarballs and signature file from http://www.kernel.org/pub/linux/utils/boot/dracut/ to the github release.
 
-9. Close the github milestone and open a new one (https://github.com/dracutdevs/dracut/milestones)
-10. Ensure that announcement was sent and reached the linux-initramfs mailinglist (https://www.spinics.net/lists/linux-initramfs/)
+7. Open a new milestone, move all unfinished issue from the previous milestone to the new one and close the released milestone (https://github.com/dracutdevs/dracut/milestones)

@@ -15,7 +15,8 @@ depends() {
 
 # called by dracut
 installkernel() {
-    return 0
+    # arping depends on af_packet
+    hostonly='' instmods af_packet
 }
 
 # called by dracut
@@ -24,8 +25,8 @@ install() {
 
     #Adding default link
     if dracut_module_included "systemd"; then
-        inst_multiple -o "${systemdutildir}/network/99-default.link"
-        [[ $hostonly ]] && inst_multiple -H -o "${systemdsystemconfdir}/network/*.link"
+        inst_multiple -o "${systemdnetwork}/99-default.link"
+        [[ $hostonly ]] && inst_multiple -H -o "${systemdnetworkconfdir}/*.link"
     fi
 
     inst_multiple ip dhclient sed awk grep pgrep tr expr

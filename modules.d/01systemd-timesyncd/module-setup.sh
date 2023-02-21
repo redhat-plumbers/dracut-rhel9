@@ -35,7 +35,7 @@ install() {
     inst_multiple -o \
         "$dbussystem"/org.freedesktop.timesync1.conf \
         "$dbussystemservices"/org.freedesktop.timesync1.service \
-        "$systemdutildir/ntp-units.d/*.list" \
+        "$systemdntpunits/*.list" \
         "$systemdutildir"/systemd-timesyncd \
         "$systemdutildir"/systemd-time-wait-sync \
         "$systemdutildir/timesyncd.conf.d/*.conf" \
@@ -55,13 +55,13 @@ install() {
     # Install the hosts local user configurations if enabled.
     if [[ $hostonly ]]; then
         inst_multiple -H -o \
-            "$systemdutilconfdir/ntp-units.d/*.list" \
+            "$systemdntpunitsconfdir/*.list" \
             "$systemdutilconfdir"/timesyncd.conf \
             "$systemdutilconfdir/timesyncd.conf.d/*.conf" \
             "$systemdsystemconfdir"/systemd-timesyncd.service \
             "$systemdsystemconfdir/systemd-timesyncd.service.d/*.conf" \
-            "$systemdsystemunitdir"/systemd-time-wait-sync.service \
-            "$systemdsystemunitdir/systemd-time-wait-sync.service.d/*.conf" \
+            "$systemdsystemconfdir"/systemd-time-wait-sync.service \
+            "$systemdsystemconfdir/systemd-time-wait-sync.service.d/*.conf" \
             "$sysusersconfdir"/systemd-timesync.conf
     fi
 }

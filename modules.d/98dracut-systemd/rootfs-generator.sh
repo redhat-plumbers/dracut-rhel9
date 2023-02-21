@@ -44,8 +44,8 @@ EOF
 }
 
 generator_mount_rootfs() {
-    local _type=$2
-    local _flags=$3
+    local _type="$2"
+    local _flags="$3"
     local _name
 
     [ -z "$1" ] && return 0
@@ -104,7 +104,7 @@ esac
 GENERATOR_DIR="$1"
 
 if [ "$rootok" = "1" ]; then
-    generator_wait_for_dev "${root#block:}" "$RDRETRY"
+    generator_wait_for_dev "${root#block:}"
     generator_fsck_after_pre_mount "${root#block:}"
     strstr "$(cat /proc/cmdline)" 'root=' || generator_mount_rootfs "${root#block:}" "$(getarg rootfstype=)" "$(getarg rootflags=)"
 fi

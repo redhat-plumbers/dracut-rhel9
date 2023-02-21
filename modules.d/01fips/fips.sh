@@ -18,6 +18,15 @@ mount_boot() {
     boot=$(getarg boot=)
 
     if [ -n "$boot" ]; then
+        if [ -d /boot ] && ismounted /boot; then
+            boot_dev=
+            if command -v findmnt > /dev/null; then
+                boot_dev=$(findmnt -n -o SOURCE /boot)
+            fi
+            fips_info "Ignoring 'boot=$boot' as /boot is already mounted ${boot_dev:+"from '$boot_dev'"}"
+            return 0
+        fi
+
         case "$boot" in
             LABEL=* | UUID=* | PARTUUID=* | PARTLABEL=*)
                 boot="$(label_uuid_to_dev "$boot")"
@@ -47,10 +56,13 @@ mount_boot() {
         mkdir -p /boot
         fips_info "Mounting $boot as /boot"
         mount -oro "$boot" /boot || return 1
-    elif [ -d "$NEWROOT/boot" ]; then
+        FIPS_MOUNTED_BOOT=1
+    elif ! ismounted /boot && [ -d "$NEWROOT/boot" ]; then
         # shellcheck disable=SC2114
         rm -fr -- /boot
         ln -sf "$NEWROOT/boot" /boot
+    else
+        die "You have to specify boot=<boot device> as a boot option for fips=1"
     fi
 }
 
@@ -82,7 +94,7 @@ fips_load_crypto() {
     local _module
     local _found
 
-    FIPSMODULES=$(cat /etc/fipsmodules)
+    read -d '' -r FIPSMODULES < /etc/fipsmodules
 
     fips_info "Loading and integrity checking all crypto modules"
     mv /etc/modprobe.d/fips.conf /etc/modprobe.d/fips.conf.bak
@@ -132,17 +144,10 @@ do_fips() {
                 if [ -e "/boot/vmlinuz-${KERNEL}" ]; then
                     BOOT_IMAGE="vmlinuz-${KERNEL}"
                 elif [ -d /boot/loader/entries ]; then
-                    i=0
-                    # shellcheck disable=SC2012
-                    for bls in $(ls -d /boot/loader/entries/*.conf | sort -rV); do
-                        if [ "$i" -eq "${BOOT_IMAGE:-0}" ] && [ -r "$bls" ]; then
-                            BOOT_IMAGE="$(grep -e '^linux' "$bls" | grep -o ' .*$')"
-                            BOOT_IMAGE=${BOOT_IMAGE## }
-                            break
-                        fi
-
-                        i=$((i + 1))
-                    done
+                    bls=$(find /boot/loader/entries -name '*.conf' | sort -rV | sed -n "$((BOOT_IMAGE + 1))p")
+                    if [ -e "${bls}" ]; then
+                        BOOT_IMAGE=$(grep ^linux "${bls}" | cut -d' ' -f2)
+                    fi
                 fi
             fi
 
@@ -150,7 +155,7 @@ do_fips() {
             BOOT_IMAGE="$(echo "${BOOT_IMAGE}" | sed 's/^(.*)//')"
 
             BOOT_IMAGE_NAME="${BOOT_IMAGE##*/}"
-            BOOT_IMAGE_PATH="${BOOT_IMAGE%${BOOT_IMAGE_NAME}}"
+            BOOT_IMAGE_PATH="${BOOT_IMAGE%"${BOOT_IMAGE_NAME}"}"
 
             if [ -z "$BOOT_IMAGE_NAME" ]; then
                 BOOT_IMAGE_NAME="vmlinuz-${KERNEL}"
@@ -179,7 +184,12 @@ do_fips() {
 
     : > /tmp/fipsdone
 
-    umount /boot > /dev/null 2>&1
+    if [ "$FIPS_MOUNTED_BOOT" = 1 ]; then
+        fips_info "Unmounting /boot"
+        umount /boot > /dev/null 2>&1
+    else
+        fips_info "Not unmounting /boot"
+    fi
 
     return 0
 }

@@ -37,7 +37,7 @@ wait_for_route_ok() {
     local cnt=0
     while [ $cnt -lt 200 ]; do
         li=$(ip route show)
-        [ -n "$li" ] && [ -z "${li##*$1*}" ] && return 0
+        [ -n "$li" ] && [ -z "${li##*"$1"*}" ] && return 0
         sleep 0.1
         cnt=$((cnt + 1))
     done
@@ -88,7 +88,7 @@ rpc.nfsd
 : > /dev/watchdog
 rpc.mountd
 : > /dev/watchdog
-rpc.idmapd
+command -v rpc.idmapd > /dev/null && [ -z "$(pidof rpc.idmapd)" ] && rpc.idmapd
 : > /dev/watchdog
 exportfs -r
 : > /dev/watchdog

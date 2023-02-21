@@ -20,13 +20,13 @@ filtersubvol() {
 }
 
 fsck_usr() {
-    local _dev=$1
-    local _fs=$2
-    local _fsopts=$3
+    local _dev="$1"
+    local _fs="$2"
+    local _fsopts="$3"
     local _fsckoptions
 
     if [ -f "$NEWROOT"/fsckoptions ]; then
-        _fsckoptions=$(cat "$NEWROOT"/fsckoptions)
+        read -r _fsckoptions < "$NEWROOT"/fsckoptions
     fi
 
     if [ -f "$NEWROOT"/forcefsck ] || getargbool 0 forcefsck; then

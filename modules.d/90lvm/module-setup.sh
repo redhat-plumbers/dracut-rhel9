@@ -43,7 +43,7 @@ cmdline() {
 }
 
 installkernel() {
-    hostonly='' instmods dm-snapshot
+    hostonly='' dracut_instmods -o -P ".*/(bcache/|md-cluster).*" "=drivers/md"
 }
 
 # called by dracut
@@ -88,8 +88,6 @@ install() {
 
     inst_script "$moddir/lvm_scan.sh" /sbin/lvm_scan
     inst_hook cmdline 30 "$moddir/parse-lvm.sh"
-
-    inst_libdir_file "libdevmapper-event-lvm*.so"
 
     if [[ $hostonly ]] && find_binary lvs &> /dev/null; then
         for dev in "${!host_fs_types[@]}"; do

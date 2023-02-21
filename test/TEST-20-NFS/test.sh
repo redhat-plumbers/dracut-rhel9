@@ -1,12 +1,6 @@
 #!/bin/bash
 
-if [[ $NM ]]; then
-    USE_NETWORK="network-manager"
-    OMIT_NETWORK="network-legacy"
-else
-    USE_NETWORK="network-legacy"
-    OMIT_NETWORK="network-manager"
-fi
+[ -z "$USE_NETWORK" ] && USE_NETWORK="network-legacy"
 
 # shellcheck disable=SC2034
 TEST_DESCRIPTION="root filesystem on NFS with $USE_NETWORK"
@@ -14,8 +8,6 @@ TEST_DESCRIPTION="root filesystem on NFS with $USE_NETWORK"
 KVERSION=${KVERSION-$(uname -r)}
 
 # Uncomment this to debug failures
-DEBUGFAIL="rd.debug loglevel=7"
-#DEBUGFAIL="rd.shell rd.break rd.debug loglevel=7 "
 #DEBUGFAIL="rd.debug loglevel=7 rd.break=initqueue rd.shell"
 SERVER_DEBUG="rd.debug loglevel=7"
 #SERIAL="unix:/tmp/server.sock"
@@ -33,7 +25,7 @@ run_server() {
         -net socket,listen=127.0.0.1:12320 \
         -net nic,macaddr=52:54:00:12:34:56,model=e1000 \
         -serial "${SERIAL:-"file:$TESTDIR/server.log"}" \
-        -watchdog i6300esb -watchdog-action poweroff \
+        -device i6300esb -watchdog-action poweroff \
         -append "panic=1 oops=panic softlockup_panic=1 root=LABEL=dracut rootfstype=ext3 rw console=ttyS0,115200n81 selinux=0 $SERVER_DEBUG" \
         -initrd "$TESTDIR"/initramfs.server \
         -pidfile "$TESTDIR"/server.pid -daemonize || return 1
@@ -69,16 +61,13 @@ client_test() {
     # shellcheck disable=SC2034
     declare -i disk_index=0
     qemu_add_drive_args disk_index disk_args "$TESTDIR"/marker.img marker
-
-    if dhclient --help 2>&1 | grep -q -F -- '--timeout' 2> /dev/null; then
-        cmdline="$cmdline rd.net.timeout.dhcp=3"
-    fi
+    cmdline="$cmdline rd.net.timeout.dhcp=30"
 
     "$testdir"/run-qemu \
         "${disk_args[@]}" \
         -net nic,macaddr="$mac",model=e1000 \
         -net socket,connect=127.0.0.1:12320 \
-        -watchdog i6300esb -watchdog-action poweroff \
+        -device i6300esb -watchdog-action poweroff \
         -append "panic=1 oops=panic softlockup_panic=1 systemd.crash_reboot rd.shell=0 $cmdline $DEBUGFAIL rd.retry=10 quiet ro console=ttyS0,115200n81 selinux=0" \
         -initrd "$TESTDIR"/initramfs.testing
 
@@ -138,16 +127,14 @@ test_nfsv3() {
     client_test "NFSv3 root=dhcp DHCP path only" 52:54:00:12:34:00 \
         "root=dhcp" 192.168.50.1 -wsize=4096 || return 1
 
-    if [[ "$(systemctl --version)" != *"systemd 230"* ]] 2> /dev/null; then
-        client_test "NFSv3 Legacy root=/dev/nfs nfsroot=IP:path" 52:54:00:12:34:01 \
-            "root=/dev/nfs nfsroot=192.168.50.1:/nfs/client" 192.168.50.1 -wsize=4096 || return 1
+    client_test "NFSv3 Legacy root=/dev/nfs nfsroot=IP:path" 52:54:00:12:34:01 \
+        "root=/dev/nfs nfsroot=192.168.50.1:/nfs/client" 192.168.50.1 -wsize=4096 || return 1
 
-        client_test "NFSv3 Legacy root=/dev/nfs DHCP path only" 52:54:00:12:34:00 \
-            "root=/dev/nfs" 192.168.50.1 -wsize=4096 || return 1
+    client_test "NFSv3 Legacy root=/dev/nfs DHCP path only" 52:54:00:12:34:00 \
+        "root=/dev/nfs" 192.168.50.1 -wsize=4096 || return 1
 
-        client_test "NFSv3 Legacy root=/dev/nfs DHCP IP:path" 52:54:00:12:34:01 \
-            "root=/dev/nfs" 192.168.50.2 -wsize=4096 || return 1
-    fi
+    client_test "NFSv3 Legacy root=/dev/nfs DHCP IP:path" 52:54:00:12:34:01 \
+        "root=/dev/nfs" 192.168.50.2 -wsize=4096 || return 1
 
     client_test "NFSv3 root=dhcp DHCP IP:path" 52:54:00:12:34:01 \
         "root=dhcp" 192.168.50.2 -wsize=4096 || return 1
@@ -169,19 +156,19 @@ test_nfsv3() {
 
     # This test must fail: nfsroot= requires root=/dev/nfs
     client_test "NFSv3 Invalid root=dhcp nfsroot=/nfs/client" 52:54:00:12:34:04 \
-        "root=dhcp nfsroot=/nfs/client failme rd.debug" 192.168.50.1 -wsize=4096 && return 1
+        "root=dhcp nfsroot=/nfs/client failme" 192.168.50.1 -wsize=4096 && return 1
 
-    client_test "NFSv3 root=dhcp DHCP path,options" \
-        52:54:00:12:34:05 "root=dhcp" 192.168.50.1 wsize=4096 || return 1
+    client_test "NFSv3 root=dhcp DHCP path,options" 52:54:00:12:34:05 \
+        "root=dhcp" 192.168.50.1 wsize=4096 || return 1
 
-    client_test "NFSv3 Bridge Customized root=dhcp DHCP path,options" \
-        52:54:00:12:34:05 "root=dhcp bridge=foobr0:enp0s1" 192.168.50.1 wsize=4096 || return 1
+    client_test "NFSv3 Bridge Customized root=dhcp DHCP path,options" 52:54:00:12:34:05 \
+        "root=dhcp bridge=foobr0:enp0s1" 192.168.50.1 wsize=4096 || return 1
 
-    client_test "NFSv3 root=dhcp DHCP IP:path,options" \
-        52:54:00:12:34:06 "root=dhcp" 192.168.50.2 wsize=4096 || return 1
+    client_test "NFSv3 root=dhcp DHCP IP:path,options" 52:54:00:12:34:06 \
+        "root=dhcp" 192.168.50.2 wsize=4096 || return 1
 
-    client_test "NFSv3 root=dhcp DHCP proto:IP:path,options" \
-        52:54:00:12:34:07 "root=dhcp" 192.168.50.3 wsize=4096 || return 1
+    client_test "NFSv3 root=dhcp DHCP proto:IP:path,options" 52:54:00:12:34:07 \
+        "root=dhcp" 192.168.50.3 wsize=4096 || return 1
 
     return 0
 }
@@ -198,11 +185,10 @@ test_nfsv4() {
         "root=dhcp" 192.168.50.3 wsize=4096 || return 1
 
     client_test "NFSv4 root=nfs4:..." 52:54:00:12:34:84 \
-        "root=nfs4:192.168.50.1:/client" 192.168.50.1 \
-        -wsize=4096 || return 1
+        "root=nfs4:192.168.50.1:/client" 192.168.50.1 -wsize=4096 || return 1
 
-    client_test "NFSv4 root=dhcp DHCP proto:IP:path,options" \
-        52:54:00:12:34:87 "root=dhcp" 192.168.50.3 wsize=4096 || return 1
+    client_test "NFSv4 root=dhcp DHCP proto:IP:path,options" 52:54:00:12:34:87 \
+        "root=dhcp" 192.168.50.3 wsize=4096 || return 1
 
     return 0
 }
@@ -274,7 +260,7 @@ test_setup() {
         inst ./dhcpd.conf /etc/dhcpd.conf
         inst_multiple -o {,/usr}/etc/nsswitch.conf {,/usr}/etc/rpc \
             {,/usr}/etc/protocols {,/usr}/etc/services
-        inst_multiple rpc.idmapd /etc/idmapd.conf
+        inst_multiple -o rpc.idmapd /etc/idmapd.conf
 
         inst_libdir_file 'libnfsidmap_nsswitch.so*'
         inst_libdir_file 'libnfsidmap/*.so*'
@@ -364,7 +350,7 @@ test_setup() {
     # We do it this way so that we do not risk trashing the host mdraid
     # devices, volume groups, encrypted partitions, etc.
     "$basedir"/dracut.sh -l -i "$TESTDIR"/server/overlay / \
-        -m "bash udev-rules base rootfs-block fs-lib kernel-modules fs-lib qemu" \
+        -m "bash rootfs-block kernel-modules qemu" \
         -d "piix ide-gd_mod ata_piix ext3 sd_mod" \
         --nomdadmconf \
         --no-hostonly-cmdline -N \
@@ -402,7 +388,7 @@ test_setup() {
 
     # Make client's dracut image
     "$basedir"/dracut.sh -l -i "$TESTDIR"/overlay / \
-        -o "plymouth dash ${OMIT_NETWORK}" \
+        -o "plymouth" \
         -a "debug watchdog ${USE_NETWORK}" \
         --no-hostonly-cmdline -N \
         -f "$TESTDIR"/initramfs.testing "$KVERSION" || return 1
@@ -418,7 +404,7 @@ test_setup() {
     )
     # Make server's dracut image
     "$basedir"/dracut.sh -l -i "$TESTDIR"/overlay / \
-        -m "dash udev-rules base rootfs-block fs-lib debug kernel-modules watchdog qemu network network-legacy" \
+        -m "dash rootfs-block debug kernel-modules watchdog qemu network network-legacy" \
         -d "af_packet piix ide-gd_mod ata_piix ext3 sd_mod e1000 i6300esb" \
         --no-hostonly-cmdline -N \
         -f "$TESTDIR"/initramfs.server "$KVERSION" || return 1

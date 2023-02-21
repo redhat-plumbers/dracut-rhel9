@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 type getarg > /dev/null 2>&1 || . /lib/dracut-lib.sh
 
@@ -33,8 +33,35 @@ overlay_size=$(getarg rd.live.overlay.size=)
 getargbool 0 rd.live.overlay.thin && thin_snapshot="yes"
 getargbool 0 rd.live.overlay.overlayfs && overlayfs="yes"
 
+# Take a path to a disk label and return the parent disk if it is a partition
+# Otherwise returns the original path
+get_check_dev() {
+    local _udevinfo
+    dev_path="$(udevadm info -q path --name "$1")"
+    _udevinfo="$(udevadm info -q property --path "${dev_path}")"
+    strstr "$_udevinfo" "DEVTYPE=partition" || {
+        echo "$1"
+        return
+    }
+    parent="${dev_path%/*}"
+    _udevinfo="$(udevadm info -q property --path "${parent}")"
+    strstr "$_udevinfo" "DEVTYPE=disk" || {
+        echo "$1"
+        return
+    }
+    strstr "$_udevinfo" "ID_FS_TYPE=iso9660" || {
+        echo "$1"
+        return
+    }
+
+    # Return the name of the parent disk device
+    echo "$_udevinfo" | grep "DEVNAME=" | sed 's/DEVNAME=//'
+}
+
+# Find the right device to run check on
+check_dev=$(get_check_dev "$livedev")
 # CD/DVD media check
-[ -b "$livedev" ] && fs=$(blkid -s TYPE -o value "$livedev")
+[ -b "$check_dev" ] && fs=$(blkid -s TYPE -o value "$check_dev")
 if [ "$fs" = "iso9660" -o "$fs" = "udf" ]; then
     check="yes"
 fi
@@ -42,10 +69,10 @@ getarg rd.live.check -d check || check=""
 if [ -n "$check" ]; then
     type plymouth > /dev/null 2>&1 && plymouth --hide-splash
     if [ -n "$DRACUT_SYSTEMD" ]; then
-        p=$(dev_unit_name "$livedev")
+        p=$(dev_unit_name "$check_dev")
         systemctl start checkisomd5@"${p}".service
     else
-        checkisomd5 --verbose "$livedev"
+        checkisomd5 --verbose "$check_dev"
     fi
     if [ $? -eq 1 ]; then
         die "CD check failed!"
@@ -62,7 +89,7 @@ det_img_fs() {
     blkid -s TYPE -u noraid -o value "$1"
 }
 
-modprobe squashfs
+load_fstype squashfs
 CMDLINE=$(getcmdline)
 for arg in $CMDLINE; do
     case $arg in
@@ -93,15 +120,7 @@ else
             exit 1
         fi
     else
-        # Symlinking /usr/bin/ntfs-3g as /sbin/mount.ntfs seems to boot
-        # at the first glance, but ends with lots and lots of squashfs
-        # errors, because systemd attempts to kill the ntfs-3g process?!
-        if [ -x "/usr/bin/ntfs-3g" ]; then
-            (exec -a @ntfs-3g ntfs-3g -o "${liverw:-ro}" "$livedev" /run/initramfs/live) | vwarn
-        else
-            die "Failed to mount block device of live image: Missing NTFS support"
-            exit 1
-        fi
+        [ -x "/sbin/mount-ntfs-3g" ] && /sbin/mount-ntfs-3g -o "${liverw:-ro}" "$livedev" /run/initramfs/live
     fi
 fi
 
@@ -177,7 +196,7 @@ do_live_overlay() {
         fi
     fi
     if [ -n "$overlayfs" ]; then
-        if ! modprobe overlay; then
+        if ! load_fstype overlay; then
             if [ "$overlayfs" = required ]; then
                 die "OverlayFS is required but not available."
                 exit 1
@@ -195,25 +214,37 @@ do_live_overlay() {
         elif [ -n "$devspec" -a -n "$pathspec" ]; then
             [ -z "$m" ] \
                 && m='   Unable to find a persistent overlay; using a temporary one.'
-            m="$m"$'\n      All root filesystem changes will be lost on shutdown.'
-            m="$m"$'\n         Press [Enter] to continue.'
+            m="$m"'
+      All root filesystem changes will be lost on shutdown.
+         Press [Enter] to continue.'
             printf "\n\n\n\n%s\n\n\n" "${m}" > /dev/kmsg
             if [ -n "$DRACUT_SYSTEMD" ]; then
                 if type plymouth > /dev/null 2>&1 && plymouth --ping; then
                     if getargbool 0 rhgb || getargbool 0 splash; then
-                        m='>>>'$'\n''>>>'$'\n''>>>'$'\n\n\n'"$m"
-                        m="${m%n.*}"$'n.\n\n\n''<<<'$'\n''<<<'$'\n''<<<'
+                        m='>>>
+>>>
+>>>
+
+
+'"$m"
+                        m="${m%n.*}"'n.
+
+
+<<<
+<<<
+<<<'
                         plymouth display-message --text="${m}"
                     else
                         plymouth ask-question --prompt="${m}" --command=true
                     fi
                 else
-                    m=">>>${m//.[[:space:]]/.}  <<<"
+                    m=">>>$(printf '%s' "$m" | tr -d '\n')  <<<"
                     systemd-ask-password --timeout=0 "${m}"
                 fi
             else
                 type plymouth > /dev/null 2>&1 && plymouth --ping && plymouth --quit
-                read -s -r -p $'\n\n'"${m}" -n 1 _
+                printf '\n\n%s' "$m"
+                read -r _
             fi
         fi
         if [ -n "$overlayfs" ]; then

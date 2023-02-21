@@ -3,11 +3,6 @@
 type source_hook > /dev/null 2>&1 || . /lib/dracut-lib.sh
 
 if [ -z "$DRACUT_SYSTEMD" ]; then
-
-    if [ -e /tmp/nm.done ]; then
-        return
-    fi
-
     # Only start NM if networking is needed
     if [ -e /run/NetworkManager/initrd/neednet ]; then
         for i in /usr/lib/NetworkManager/system-connections/* \

@@ -36,6 +36,7 @@ strstr() {
 # An empty $1 will not be considered matched, even if $2 is * which technically
 # matches; as it would match anything, it's not an interesting case.
 strglob() {
+    # shellcheck disable=SC2295
     [ -n "$1" -a -z "${1##$2}" ]
 }
 
@@ -43,6 +44,7 @@ strglob() {
 # An empty $1 will not be considered matched, even if $2 is * which technically
 # matches; as it would match anything, it's not an interesting case.
 strglobin() {
+    # shellcheck disable=SC2295
     [ -n "$1" -a -z "${1##*$2*}" ]
 }
 
@@ -101,26 +103,6 @@ vinfo() {
     while read -r line || [ -n "$line" ]; do
         info "$line"
     done
-}
-
-# replaces all occurrences of 'search' in 'str' with 'replacement'
-#
-# str_replace str search replacement
-#
-# example:
-# str_replace '  one two  three  ' ' ' '_'
-str_replace() {
-    local in="$1"
-    local s="$2"
-    local r="$3"
-    local out=''
-
-    while strstr "${in}" "$s"; do
-        chop="${in%%"$s"*}"
-        out="${out}${chop}$r"
-        in="${in#*"$s"}"
-    done
-    echo "${out}${in}"
 }
 
 killall_proc_mountpoint() {
@@ -343,7 +325,7 @@ getoptcomma() {
 
     case "${line}" in
         *,${opt}=*,*)
-            tmp="${line#*,${opt}=}"
+            tmp="${line#*,"${opt}"=}"
             echo "${tmp%%,*}"
             return 0
             ;;
@@ -373,10 +355,10 @@ splitsep() {
     local tmp
 
     while [ -n "$str" -a "$#" -gt 1 ]; do
-        tmp="${str%%$sep*}"
+        tmp="${str%%"$sep"*}"
         eval "$1='${tmp}'"
         str="${str#"$tmp"}"
-        str="${str#$sep}"
+        str="${str#"$sep"}"
         shift
     done
     [ -n "$str" -a -n "$1" ] && eval "$1='$str'"
@@ -491,8 +473,8 @@ check_occurances() {
     local expected="$3"
     local count=0
 
-    while [ "${str#*$ch}" != "${str}" ]; do
-        str="${str#*$ch}"
+    while [ "${str#*"$ch"}" != "${str}" ]; do
+        str="${str#*"$ch"}"
         count=$((count + 1))
     done
 
@@ -847,7 +829,7 @@ killproc() {
     debug_off
     local _exe
     _exe="$(command -v "$1")"
-    local _sig=$2
+    local _sig="$2"
     local _i
     [ -x "$_exe" ] || return 1
     for _i in /proc/[0-9]*; do
@@ -911,7 +893,7 @@ if ! command -v pidof > /dev/null 2> /dev/null; then
                 [ "$i" -ef "$_exe" ] || continue
             else
                 _rl=$(readlink -f "$i")
-                [ "${_rl%/$_cmd}" != "$_rl" ] || continue
+                [ "${_rl%/"$_cmd"}" != "$_rl" ] || continue
             fi
             i=${i%/exe}
             echo "${i##/proc/}"
@@ -952,7 +934,7 @@ _emergency_shell() {
         if [ -z "$_ctty" ]; then
             _ctty=console
             while [ -f /sys/class/tty/$_ctty/active ]; do
-                _ctty=$(cat /sys/class/tty/$_ctty/active)
+                read -r _ctty < /sys/class/tty/$_ctty/active
                 _ctty=${_ctty##* } # last one in the list
             done
             _ctty=/dev/$_ctty
@@ -976,11 +958,6 @@ emergency_shell() {
         _rdshell_name=$2
         action="Shutdown"
         hook="shutdown-emergency"
-        if type plymouth > /dev/null 2>&1; then
-            plymouth --hide-splash
-        elif [ -x /oldroot/bin/plymouth ]; then
-            /oldroot/bin/plymouth --hide-splash
-        fi
         shift 2
     fi
 
@@ -1129,7 +1106,13 @@ make_trace_mem() {
 show_memstats() {
     case $1 in
         shortmem)
-            grep -e "^MemFree" -e "^Cached" -e "^Slab" /proc/meminfo
+            while read -r line || [ -n "$line" ]; do
+                str_starts "$line" "MemFree" \
+                    || str_starts "$line" "Cached" \
+                    || str_starts "$line" "Slab" \
+                    || continue
+                echo "$line"
+            done < /proc/meminfo
             ;;
         mem)
             cat /proc/meminfo
@@ -1151,4 +1134,16 @@ remove_hostonly_files() {
             rm -f "$line"
         done < /lib/dracut/hostonly-files
     fi
+}
+
+# parameter: kernel_module [filesystem_name]
+# returns OK if kernel_module is loaded
+# modprobe fails if /lib/modules is not available (--no-kernel use case)
+load_fstype() {
+    local - fs _fs="${2:-$1}"
+    set +x
+    while read -r d fs || [ "$d" ]; do
+        [ "${fs:-$d}" = "$_fs" ] && return 0
+    done < /proc/filesystems
+    modprobe "$1"
 }

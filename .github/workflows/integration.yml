@@ -17,7 +17,20 @@ jobs:
                         "fedora:latest",
                 ]
                 test: [
+                        "01",
+                        "02",
+                        "03",
                         "04",
+                        "10",
+                        "11",
+                        "12",
+                        "13",
+                        "14",
+                        "15",
+                        "16",
+                        "17",
+                        "62",
+                        "98",
                 ]
             fail-fast: false
         container:
@@ -25,7 +38,7 @@ jobs:
             options: "--privileged -v /dev:/dev"
         steps:
             -   name: "Checkout Repository"
-                uses: actions/checkout@v2
+                uses: actions/checkout@v3
                 with:
                     fetch-depth: 0
 
