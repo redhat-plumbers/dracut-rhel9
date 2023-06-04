@@ -4,10 +4,10 @@
 check() {
     # If our prerequisites are not met, fail anyways.
     require_binaries iscsi-iname iscsiadm iscsid || return 1
+    require_kernel_modules iscsi_tcp || return 1
 
     # If hostonly was requested, fail the check if we are not actually
     # booting from root.
-
     [[ $hostonly ]] || [[ $mount_needs ]] && {
         pushd . > /dev/null
         for_each_host_dev_and_slaves block_is_iscsi
@@ -78,10 +78,10 @@ install_iscsiroot() {
     for flash in "${host}"/flashnode_sess-*; do
         [ -f "$flash" ] || continue
         [ ! -e "$flash/is_boot_target" ] && continue
-        is_boot=$(cat "$flash"/is_boot_target)
+        read -r is_boot < "$flash"/is_boot_target
         if [ "$is_boot" -eq 1 ]; then
             # qla4xxx flashnode session; skip iBFT discovery
-            iscsi_initiator=$(cat /sys/class/iscsi_host/"${iscsi_host}"/initiatorname)
+            read -r iscsi_initiator < /sys/class/iscsi_host/"${iscsi_host}"/initiatorname
             echo "rd.iscsi.initiator=${iscsi_initiator}"
             return
         fi
@@ -93,14 +93,14 @@ install_iscsiroot() {
                 c=${d##*/}
                 conn=${d}/iscsi_connection/${c}
                 if [ -d "${conn}" ]; then
-                    iscsi_address=$(cat "${conn}"/persistent_address)
-                    iscsi_port=$(cat "${conn}"/persistent_port)
+                    read -r iscsi_address < "${conn}"/persistent_address
+                    read -r iscsi_port < "${conn}"/persistent_port
                 fi
                 ;;
             *session)
                 if [ -d "${d}"/"${iscsi_session}" ]; then
-                    iscsi_initiator=$(cat "${d}"/"${iscsi_session}"/initiatorname)
-                    iscsi_targetname=$(cat "${d}"/"${iscsi_session}"/targetname)
+                    read -r iscsi_initiator < "${d}"/"${iscsi_session}"/initiatorname
+                    read -r iscsi_targetname < "${d}"/"${iscsi_session}"/targetname
                 fi
                 ;;
         esac
@@ -161,7 +161,7 @@ installkernel() {
     local _funcs='iscsi_register_transport'
 
     instmods bnx2i qla4xxx cxgb3i cxgb4i be2iscsi qedi
-    hostonly="" instmods iscsi_tcp iscsi_ibft crc32c iscsi_boot_sysfs
+    hostonly="" instmods iscsi_tcp iscsi_ibft crc32c iscsi_boot_sysfs 8021q
 
     if [ "$_arch" = "s390" -o "$_arch" = "s390x" ]; then
         _s390drivers="=drivers/s390/scsi"

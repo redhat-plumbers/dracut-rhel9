@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 
 # called by dracut
 check() {
@@ -16,7 +16,7 @@ check() {
 
 # called by dracut
 depends() {
-    return 0
+    echo base
 }
 
 # called by dracut

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 _remove_dm() {
-    local dev=$1
+    local dev="$1"
     local s
     local devname
 
@@ -17,7 +17,7 @@ _remove_dm() {
             return 0
             ;;
         *)
-            devname=$(cat /sys/block/"${dev}"/dm/name)
+            read -r devname < /sys/block/"${dev}"/dm/name
             dmsetup -v --noudevsync remove "$devname" || return $?
             ;;
     esac
@@ -26,7 +26,7 @@ _remove_dm() {
 
 _do_dm_shutdown() {
     local ret=0
-    local final=$1
+    local final="$1"
     local dev
 
     info "Disassembling device-mapper devices"

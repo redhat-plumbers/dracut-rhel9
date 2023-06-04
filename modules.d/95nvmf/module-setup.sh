@@ -18,7 +18,7 @@ check() {
         for d in device/nvme*; do
             [ -L "$d" ] || continue
             if readlink "$d" | grep -q nvme-fabrics; then
-                trtype=$(cat "$d"/transport)
+                read -r trtype < "$d"/transport
                 break
             fi
         done
@@ -61,6 +61,11 @@ cmdline() {
     gen_nvmf_cmdline() {
         local _dev=$1
         local trtype
+        local traddr
+        local host_traddr
+        local trsvcid
+        local _address
+        local -a _address_parts
 
         [[ -L "/sys/dev/block/$_dev" ]] || return 0
         cd -P "/sys/dev/block/$_dev" || return 0
@@ -70,24 +75,34 @@ cmdline() {
         for d in device/nvme*; do
             [ -L "$d" ] || continue
             if readlink "$d" | grep -q nvme-fabrics; then
-                trtype=$(cat "$d"/transport)
+                read -r trtype < "$d"/transport
                 break
             fi
         done
 
         [ -z "$trtype" ] && return 0
-        nvme list-subsys "${PWD##*/}" | while read -r _ _ trtype traddr host_traddr _; do
-            [ "$trtype" != "${trtype#NQN}" ] && continue
-            echo -n " rd.nvmf.discover=$trtype,${traddr#traddr=},${host_traddr#host_traddr=}"
+        nvme list-subsys "${PWD##*/}" | while read -r _ _ trtype _address _; do
+            [[ -z $trtype || $trtype != "${trtype#NQN}" ]] && continue
+            unset traddr
+            unset host_traddr
+            unset trsvcid
+            mapfile -t -d ',' _address_parts < <(printf "%s" "$_address")
+            for i in "${_address_parts[@]}"; do
+                [[ $i =~ ^traddr= ]] && traddr="${i#traddr=}"
+                [[ $i =~ ^host_traddr= ]] && host_traddr="${i#host_traddr=}"
+                [[ $i =~ ^trsvcid= ]] && trsvcid="${i#trsvcid=}"
+            done
+            [[ -z $traddr && -z $host_traddr && -z $trsvcid ]] && continue
+            echo -n " rd.nvmf.discover=$trtype,$traddr,$host_traddr,$trsvcid"
         done
     }
 
     if [ -f /etc/nvme/hostnqn ]; then
-        _hostnqn=$(cat /etc/nvme/hostnqn)
+        read -r _hostnqn < /etc/nvme/hostnqn
         echo -n " rd.nvmf.hostnqn=${_hostnqn}"
     fi
     if [ -f /etc/nvme/hostid ]; then
-        _hostid=$(cat /etc/nvme/hostid)
+        read -r _hostid < /etc/nvme/hostid
         echo -n " rd.nvmf.hostid=${_hostid}"
     fi
 
@@ -113,7 +128,7 @@ install() {
     inst_script "${moddir}/nvmf-autoconnect.sh" /sbin/nvmf-autoconnect.sh
 
     inst_multiple nvme
-    inst_hook cmdline 99 "$moddir/parse-nvmf-boot-connections.sh"
+    inst_hook cmdline 92 "$moddir/parse-nvmf-boot-connections.sh"
     inst_simple "/etc/nvme/discovery.conf"
     inst_rules /usr/lib/udev/rules.d/71-nvmf-iopolicy-netapp.rules
     inst_rules "$moddir/95-nvmf-initqueue.rules"

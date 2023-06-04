@@ -12,6 +12,9 @@
 # routing,dns,dhcp-options,etc.
 #
 
+# we really need to use `expr substr` with dash
+# shellcheck disable=SC2003 disable=SC2308
+
 command -v getarg > /dev/null || . /lib/dracut-lib.sh
 
 if [ -n "$netroot" ] && [ -z "$(getarg ip=)" ] && [ -z "$(getarg BOOTIF=)" ]; then
@@ -139,7 +142,7 @@ fi
 
 # This ensures that BOOTDEV is always first in IFACES
 if [ -n "$BOOTDEV" ] && [ -n "$IFACES" ]; then
-    IFACES="${IFACES%$BOOTDEV*} ${IFACES#*$BOOTDEV}"
+    IFACES="${IFACES%"$BOOTDEV"*} ${IFACES#*"$BOOTDEV"}"
     IFACES="$BOOTDEV $IFACES"
 fi
 

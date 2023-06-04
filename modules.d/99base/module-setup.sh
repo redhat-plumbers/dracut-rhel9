@@ -13,7 +13,7 @@ depends() {
 
 # called by dracut
 install() {
-    inst_multiple mount mknod mkdir sleep chroot chown \
+    inst_multiple mount mknod mkdir sleep chown \
         sed ls flock cp mv dmesg rm ln rmmod mkfifo umount readlink setsid \
         modprobe chmod tr
 
@@ -30,8 +30,12 @@ install() {
     fi
 
     # add common users in /etc/passwd, it will be used by nfs/ssh currently
-    grep '^root:' "$initdir/etc/passwd" 2> /dev/null || echo 'root:x:0:0::/root:/bin/sh' >> "$initdir/etc/passwd"
-    grep '^nobody:' /etc/passwd >> "$initdir/etc/passwd"
+    # use password for hostonly images to facilitate secure sulogin in emergency console
+    [[ $hostonly ]] && pwshadow='x'
+    grep '^root:' "$initdir/etc/passwd" > /dev/null 2>&1 || echo "root:$pwshadow:0:0::/root:/bin/sh" >> "$initdir/etc/passwd"
+    grep '^nobody:' "$dracutsysrootdir"/etc/passwd >> "$initdir/etc/passwd"
+
+    [[ $hostonly ]] && grep '^root:' "$dracutsysrootdir"/etc/shadow >> "$initdir/etc/shadow"
 
     # install our scripts and hooks
     inst_script "$moddir/init.sh" "/init"
@@ -52,7 +56,6 @@ install() {
     if ! dracut_module_included "systemd"; then
         inst_multiple switch_root || dfatal "Failed to install switch_root"
         inst_hook cmdline 10 "$moddir/parse-root-opts.sh"
-        inst_multiple -o "$systemdutildir"/systemd-timestamp
     fi
 
     if [[ $realinitpath ]]; then

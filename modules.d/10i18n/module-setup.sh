@@ -63,7 +63,9 @@ install() {
             readarray -t INCLUDES < <("$CMD" '^include ' "$MAP" | while read -r _ a _ || [ -n "$a" ]; do echo "${a//\"/}"; done)
 
             for INCL in "${INCLUDES[@]}"; do
-                for FN in "$dracutsysrootdir""${kbddir}"/keymaps/**/"$INCL"*; do
+                local -a FNS
+                mapfile -t -d '' FNS < <(find "${dracutsysrootdir}${kbddir}"/keymaps/ -type f -name "${INCL}*" -print0)
+                for FN in "${FNS[@]}"; do
                     [[ -f $FN ]] || continue
                     [[ -v KEYMAPS["$FN"] ]] || findkeymap "$FN"
                 done
@@ -220,8 +222,12 @@ install() {
         inst_opt_decompress "${kbddir}"/consolefonts/"${DEFAULT_FONT}".*
 
         if [[ ${FONT} ]] && [[ ${FONT} != "${DEFAULT_FONT}" ]]; then
-            FONT=${FONT%.psf*}
-            inst_opt_decompress "${kbddir}"/consolefonts/"${FONT}".*
+            if [[ -f "${kbddir}"/consolefonts/"${FONT}" ]]; then
+                inst_opt_decompress "${kbddir}"/consolefonts/"${FONT}"
+            else
+                FONT=${FONT%.psf*}
+                inst_opt_decompress "${kbddir}"/consolefonts/"${FONT}".*
+            fi
         fi
 
         if [[ ${FONT_MAP} ]]; then
