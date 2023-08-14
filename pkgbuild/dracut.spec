@@ -214,13 +214,6 @@ rm -fr -- $RPM_BUILD_ROOT/%{dracutlibdir}/modules.d/00dash
 # we do not support mksh in the initramfs
 rm -fr -- $RPM_BUILD_ROOT/%{dracutlibdir}/modules.d/00mksh
 
-%if %{defined _unitdir}
-# with systemd IMA and selinux modules do not make sense
-rm -fr -- $RPM_BUILD_ROOT/%{dracutlibdir}/modules.d/96securityfs
-rm -fr -- $RPM_BUILD_ROOT/%{dracutlibdir}/modules.d/97masterkey
-rm -fr -- $RPM_BUILD_ROOT/%{dracutlibdir}/modules.d/98integrity
-%endif
-
 %ifnarch s390 s390x
 # remove architecture specific modules
 rm -fr -- $RPM_BUILD_ROOT/%{dracutlibdir}/modules.d/80cms
@@ -394,11 +387,9 @@ echo 'dracut_rescue_image="yes"' > $RPM_BUILD_ROOT%{dracutlibdir}/dracut.conf.d/
 %{dracutlibdir}/modules.d/95zfcp
 %{dracutlibdir}/modules.d/95zfcp_rules
 %endif
-%if %{undefined _unitdir}
 %{dracutlibdir}/modules.d/96securityfs
 %{dracutlibdir}/modules.d/97masterkey
 %{dracutlibdir}/modules.d/98integrity
-%endif
 %{dracutlibdir}/modules.d/97biosdevname
 %{dracutlibdir}/modules.d/98dracut-systemd
 %{dracutlibdir}/modules.d/98ecryptfs
