@@ -35,7 +35,7 @@ install() {
     inst_simple "${systemdsystemunitdir}/rngd.service"
 
     if [ -r /etc/sysconfig/rngd ]; then
-      inst_simple "${moddir}/sysconfig" "/etc/sysconfig/rngd"
+        inst_simple "${moddir}/sysconfig" "/etc/sysconfig/rngd"
     fi
 
     # make sure dependant libs are installed too
