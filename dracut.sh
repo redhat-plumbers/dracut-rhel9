@@ -2592,7 +2592,7 @@ if [[ $uefi == yes ]]; then
             printf "%s " "$(< "$conf")" >> "$uefi_outdir/cmdline.txt"
         done
     fi
-
+    # shellcheck disable=SC1004
     offs=$(objdump -h "$uefi_stub" 2> /dev/null | gawk 'NF==7 {size=strtonum("0x"$3);\
                 offset=strtonum("0x"$4)} END {print size + offset}')
     if [[ $offs -eq 0 ]]; then
