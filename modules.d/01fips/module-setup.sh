@@ -82,4 +82,17 @@ install() {
             dfatal "To create an initramfs with fips support, dracut has to run as root"
             return 1
         }
+
+    # if we have openssl we need to install their fips library and configuration
+    [ -x /usr/bin/openssl ] && {
+        read -r _ conf < <(openssl version -d)
+        conf=${conf#\"}
+        conf=${conf%\"}
+        inst_simple "${moddir}/openssl.cnf" "$conf/openssl.cnf"
+
+        read -r _ mod < <(openssl version -m)
+        mod=${mod#\"}
+        mod=${mod%\"}
+        inst_simple "$mod/fips.so"
+    }
 }
