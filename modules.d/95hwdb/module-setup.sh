@@ -15,7 +15,7 @@ install() {
     hwdb_bin="${udevdir}"/hwdb.bin
 
     if [[ ! -r "${hwdb_bin}" ]]; then
-      hwdb_bin="${udevconfdir}"/hwdb.bin
+        hwdb_bin="${udevconfdir}"/hwdb.bin
     fi
 
     if [[ $hostonly ]]; then
