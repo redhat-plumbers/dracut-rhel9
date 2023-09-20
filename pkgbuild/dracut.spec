@@ -111,6 +111,7 @@ Requires: %{name} = %{version}-%{release}
 %endif
 Requires: iputils
 Requires: iproute
+Requires: jq
 Requires: (NetworkManager >= 1.20 or dhclient)
 Suggests: NetworkManager
 Obsoletes: dracut-generic < 008
@@ -369,7 +370,6 @@ echo 'dracut_rescue_image="yes"' > $RPM_BUILD_ROOT%{dracutlibdir}/dracut.conf.d/
 %{dracutlibdir}/modules.d/95fstab-sys
 %{dracutlibdir}/modules.d/95hwdb
 %{dracutlibdir}/modules.d/95lunmask
-%{dracutlibdir}/modules.d/95nvmf
 %{dracutlibdir}/modules.d/95resume
 %{dracutlibdir}/modules.d/95rootfs-block
 %{dracutlibdir}/modules.d/95terminfo
@@ -441,6 +441,7 @@ echo 'dracut_rescue_image="yes"' > $RPM_BUILD_ROOT%{dracutlibdir}/dracut.conf.d/
 %{dracutlibdir}/modules.d/95iscsi
 %{dracutlibdir}/modules.d/95nbd
 %{dracutlibdir}/modules.d/95nfs
+%{dracutlibdir}/modules.d/95nvmf
 %{dracutlibdir}/modules.d/95ssh-client
 %ifarch s390 s390x
 %{dracutlibdir}/modules.d/95znet
