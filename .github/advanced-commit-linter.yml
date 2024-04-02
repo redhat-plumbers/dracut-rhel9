@@ -1,0 +1,17 @@
+policy:
+  cherry-pick:
+    upstream:
+      - github: dracutdevs/dracut
+    exception:
+      note:
+        - rhel-only
+        - RHEL-only
+  tracker:
+    - keyword:
+        - 'Resolves: '
+        - 'Related: '
+        - 'Reverts: '
+      type: jira
+      issue-format:
+        - 'RHEL-\d+$'
+      url: 'https://issues.redhat.com/browse/'
