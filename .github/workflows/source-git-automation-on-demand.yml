@@ -66,5 +66,6 @@ jobs:
         uses: redhat-plumbers-in-action/source-git-automation@v1
         with:
           pr-number: ${{ matrix.pr-number }}
+          component: dracut
           jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           token: ${{ secrets.GITHUB_TOKEN }}
