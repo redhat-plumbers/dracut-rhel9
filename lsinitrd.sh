@@ -133,6 +133,8 @@ else
         image="/lib/modules/${KERNEL_VERSION}/initrd"
     elif [[ -f /boot/initramfs-${KERNEL_VERSION}.img ]]; then
         image="/boot/initramfs-${KERNEL_VERSION}.img"
+    elif [[ -f /usr/lib/modules/${KERNEL_VERSION}/initramfs.img ]]; then
+        image="/usr/lib/modules/${KERNEL_VERSION}/initramfs.img"
     elif [[ $MACHINE_ID ]] \
         && mountpoint -q /efi; then
         image="/efi/${MACHINE_ID}/${KERNEL_VERSION}/initrd"
