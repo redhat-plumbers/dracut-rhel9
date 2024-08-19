@@ -2,7 +2,7 @@
 
 # called by dracut
 check() {
-    return 255
+    return 0
 }
 
 # called by dracut
