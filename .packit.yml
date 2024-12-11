@@ -7,7 +7,7 @@
 # Docs: https://packit.dev/docs/
 
 specfile_path: pkgbuild/dracut.spec
-synced_files:
+files_to_sync:
   - .packit.yaml
 upstream_package_name: dracut
 downstream_package_name: dracut
