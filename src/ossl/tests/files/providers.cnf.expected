@@ -1,0 +1,4 @@
+/usr/lib64/ossl-modules/fips.so
+/usr/lib64/ossl-modules/legacy.so
+/usr/lib64/ossl-modules/pkcs11.so
+/usr/lib64/ossl-modules/oqsprovider.so.0.6.0

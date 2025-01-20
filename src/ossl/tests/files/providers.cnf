@@ -1,0 +1,31 @@
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = providers_sect
+
+[providers_sect]
+default = default_sect
+fips = fips_sect
+legacy = legacy_sect
+base = base_sect
+pkcs11 = pkcs11_sect
+oqs = oqs_sect
+
+[default_sect]
+activate = 1
+
+[fips_sect]
+activate = 1
+
+[legacy_sect]
+activate = 1
+
+[base_sect]
+activate = 1
+
+[pkcs11_sect]
+activate = 1
+
+[oqs_sect]
+activate = 1
+module = /usr/lib64/ossl-modules/oqsprovider.so.0.6.0

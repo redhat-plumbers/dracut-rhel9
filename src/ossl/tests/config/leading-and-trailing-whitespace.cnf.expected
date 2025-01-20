@@ -1,0 +1,7 @@
+# This configuration file was linarized and expanded from tests/config/leading-and-trailing-whitespace.cnf
+openssl_conf = openssl_init
+
+[test]
+0.recipient = " "/C=FI/O=Insta Demo/CN=Insta Demo CA
+1.recipient = /C=FI/O=Insta Demo/CN=Insta Demo CA" "
+2.recipient = " "/C=FI/O=Insta Demo/CN=Insta Demo CA" "

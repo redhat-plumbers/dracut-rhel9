@@ -5,9 +5,8 @@ check() {
     return 0
 }
 
-# called by dracut
 depends() {
-    return 0
+    echo openssl
 }
 
 # called by dracut
@@ -70,17 +69,4 @@ install() {
     inst_multiple sha512hmac rmmod insmod mount uname umount grep sed cut find sort cat tail tr
 
     inst_simple /etc/system-fips
-
-    # if we have openssl we need to install their fips library and configuration
-    [ -x /usr/bin/openssl ] && {
-        read -r _ conf < <(openssl version -d)
-        conf=${conf#\"}
-        conf=${conf%\"}
-        inst_simple "${moddir}/openssl.cnf" "$conf/openssl.cnf"
-
-        read -r _ mod < <(openssl version -m)
-        mod=${mod#\"}
-        mod=${mod%\"}
-        inst_simple "$mod/fips.so"
-    }
 }

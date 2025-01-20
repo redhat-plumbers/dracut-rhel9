@@ -1,0 +1,22 @@
+openssl_conf = openssl_init
+
+[openssl_init]
+engines = engines_sect
+
+[engines_sect]
+afalg = afalg_sect
+loader_attic = loader_attic_sect
+pkcs11 = pkcs11_sect
+
+[afalg_sect]
+dynamic_path = afalg.so
+
+[loader_attic_sect]
+dynamic_path = /usr/lib64/engines-3/loader_attic.so
+init = 1
+
+[pkcs11_sect]
+engine_id = pkcs11
+dynamic_path = /usr/lib64/engines-3/libpkcs11.so
+MODULE_PATH = opensc-pkcs11.so
+init = 1
