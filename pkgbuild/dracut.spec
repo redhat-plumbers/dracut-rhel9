@@ -39,6 +39,7 @@ BuildRequires: gcc
 %if 0%{?fedora} || 0%{?rhel}
 BuildRequires: pkgconfig
 BuildRequires: systemd
+BuildRequires: openssl-devel
 %endif
 %if 0%{?fedora}
 BuildRequires: bash-completion
@@ -277,6 +278,8 @@ echo 'dracut_rescue_image="yes"' > $RPM_BUILD_ROOT%{dracutlibdir}/dracut.conf.d/
 %{dracutlibdir}/dracut-initramfs-restore
 %{dracutlibdir}/dracut-install
 %{dracutlibdir}/dracut-util
+%{dracutlibdir}/ossl-config
+%{dracutlibdir}/ossl-files
 %{dracutlibdir}/skipcpio
 %config(noreplace) %{_sysconfdir}/dracut.conf
 %if 0%{?fedora} || 0%{?suse_version} || 0%{?rhel}
@@ -402,6 +405,7 @@ echo 'dracut_rescue_image="yes"' > $RPM_BUILD_ROOT%{dracutlibdir}/dracut.conf.d/
 %{dracutlibdir}/modules.d/99base
 %{dracutlibdir}/modules.d/99memstrack
 %{dracutlibdir}/modules.d/99fs-lib
+%{dracutlibdir}/modules.d/99openssl
 %{dracutlibdir}/modules.d/99shutdown
 %attr(0644,root,root) %ghost %config(missingok,noreplace) %{_localstatedir}/log/dracut.log
 %dir %{_sharedstatedir}/initramfs

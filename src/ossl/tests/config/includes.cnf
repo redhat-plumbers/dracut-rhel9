@@ -1,0 +1,6 @@
+openssl_conf = openssl_init
+
+.include = tests/config/includes.1.d
+.include tests/config/includes.2.d
+.include tests/config/nonexistant.d
+.include tests/config/included-file.noncnf

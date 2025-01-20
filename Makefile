@@ -51,7 +51,7 @@ manpages = $(man1pages) $(man5pages) $(man7pages) $(man8pages)
 
 .PHONY: install clean archive rpm srpm testimage test all check AUTHORS CONTRIBUTORS doc dracut-version.sh
 
-all: dracut-version.sh dracut.pc dracut-install src/skipcpio/skipcpio dracut-util
+all: dracut-version.sh dracut.pc dracut-install src/skipcpio/skipcpio dracut-util ossl-config ossl-files
 
 %.o : %.c
 	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(KMOD_CFLAGS) $< -o $@
@@ -91,6 +91,15 @@ util/util: $(UTIL_OBJECTS)
 
 dracut-util: src/util/util
 	cp -a $< $@
+
+ossl:
+	$(MAKE) -C src/ossl
+
+ossl-config: ossl
+	cp -a src/ossl/src/ossl-config $@
+
+ossl-files: ossl
+	cp -a src/ossl/src/ossl-files $@
 
 .PHONY: indent-c
 indent-c:
@@ -198,14 +207,20 @@ endif
 			$(DESTDIR)$(systemdsystemunitdir)/initrd.target.wants/$$i; \
 		done \
 	fi
-	if [ -f src/install/dracut-install ]; then \
+	if [ -r src/install/dracut-install ]; then \
 		install -m 0755 src/install/dracut-install $(DESTDIR)$(pkglibdir)/dracut-install; \
 	fi
-	if [ -f src/skipcpio/skipcpio ]; then \
+	if [ -r src/skipcpio/skipcpio ]; then \
 		install -m 0755 src/skipcpio/skipcpio $(DESTDIR)$(pkglibdir)/skipcpio; \
 	fi
-	if [ -f dracut-util ]; then \
+	if [ -r dracut-util ]; then \
 		install -m 0755 dracut-util $(DESTDIR)$(pkglibdir)/dracut-util; \
+	fi
+	if [ -r ossl-config ]; then \
+		install -m 0755 ossl-config $(DESTDIR)$(pkglibdir)/ossl-config; \
+	fi
+	if [ -r ossl-files ]; then \
+		install -m 0755 ossl-files $(DESTDIR)$(pkglibdir)/ossl-files; \
 	fi
 ifeq ($(enable_dracut_cpio),yes)
 	install -m 0755 dracut-cpio $(DESTDIR)$(pkglibdir)/dracut-cpio
@@ -237,7 +252,9 @@ clean:
 	$(RM) $(manpages) dracut.html
 	$(RM) dracut.pc
 	$(RM) dracut-cpio src/dracut-cpio/target/release/dracut-cpio*
+	$(RM) ossl-files ossl-config
 	$(MAKE) -C test clean
+	$(MAKE) -C src/ossl clean
 
 dist: dracut-$(DRACUT_MAIN_VERSION).tar.xz
 
