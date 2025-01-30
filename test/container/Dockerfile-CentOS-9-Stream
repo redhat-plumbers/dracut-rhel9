@@ -11,7 +11,7 @@ RUN echo 'export DRACUT_NO_XATTR=1 KVERSION=$(cd /lib/modules; ls -1 | tail -1)'
 # FIXME: add dmraid, scsi-target-utils (e.g. from COPR)
 RUN dnf -y install --enablerepo crb --setopt=install_weak_deps=False \
     https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/Packages/d/dash-0.5.11.5-4.el9.x86_64.rpm \
-    https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/Packages/b/btrfs-progs-6.10-1.el9.x86_64.rpm \
+    https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/Packages/b/btrfs-progs-6.12-3.el9.x86_64.rpm \
     qemu-kvm \
     NetworkManager \
     asciidoc \
