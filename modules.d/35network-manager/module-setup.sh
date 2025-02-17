@@ -16,11 +16,6 @@ depends() {
 
 # called by dracut
 installkernel() {
-    return 0
-}
-
-# called by dracut
-installkernel() {
     instmods nf_tables nfnetlink nft_fwd_netdev
 }
 
