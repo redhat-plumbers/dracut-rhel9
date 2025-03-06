@@ -95,6 +95,17 @@ case "$COMMAND" in
             echo "Can't copy '$KERNEL_IMAGE to '$BOOT_DIR_ABS/$KERNEL'!" >&2
         fi
 
+        HMAC=".${KERNEL}.hmac"
+
+        KERNEL_DIR="${KERNEL_IMAGE%/*}"
+        KERNEL_FILE="${KERNEL_IMAGE##*/}"
+
+        HMAC_FILE="${KERNEL_DIR}/.${KERNEL_FILE}.hmac"
+
+        if ! sed -E "s/([0-9a-f]+)(\s+).*$/\1\2${KERNEL}/" "$HMAC_FILE" > "$BOOT_DIR_ABS/$HMAC"; then
+            echo "Can't create '$BOOT_DIR_ABS/$HMAC' from '$HMAC_FILE'!" >&2
+        fi
+
         if [[ ! -f "$BOOT_DIR_ABS/$INITRD" ]]; then
             dracut -f --no-hostonly -a "rescue" "$BOOT_DIR_ABS/$INITRD" "$KERNEL_VERSION"
             ((ret+=$?))
