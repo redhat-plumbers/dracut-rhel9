@@ -13,7 +13,7 @@ ConditionPathExists=!/etc/multipath.conf
 [Service]
 Type=oneshot
 ExecStartPre=-/usr/bin/mkdir -p /etc/multipath/multipath.conf.d
-ExecStart=/usr/sbin/mpathconf --enable
+ExecStart=/usr/sbin/mpathconf --enable --user_friendly_names n
 
 [Install]
 WantedBy=sysinit.target
