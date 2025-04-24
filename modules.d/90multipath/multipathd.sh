@@ -2,7 +2,8 @@
 
 if [ "$(getarg rd.multipath)" = "default" ] && [ ! -e /etc/multipath.conf ]; then
     mkdir -p /etc/multipath/multipath.conf.d
-    mpathconf --enable
+    mpathconf --enable --user_friendly_names n
+
 fi
 
 if getargbool 1 rd.multipath && [ -e /etc/multipath.conf ]; then
