@@ -661,7 +661,7 @@ check_vol_slaves() {
 }
 
 check_vol_slaves_all() {
-    local _vg _pv _majmin
+    local _vg _pv _majmin _ret=1
     _majmin="$2"
     _dm="/sys/dev/block/$_majmin/dm"
     [[ -f $_dm/uuid && $(< "$_dm"/uuid) =~ LVM-* ]] || return 1
@@ -675,11 +675,10 @@ check_vol_slaves_all() {
         fi
 
         for _pv in $(lvm vgs --noheadings -o pv_name "$_vg" 2> /dev/null); do
-            check_block_and_slaves_all "$1" "$(get_maj_min "$_pv")"
+            check_block_and_slaves_all "$1" "$(get_maj_min "$_pv")" && _ret=0
         done
-        return 0
     fi
-    return 1
+    return $_ret
 }
 
 # fs_get_option <filesystem options> <search for option>
