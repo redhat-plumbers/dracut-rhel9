@@ -61,6 +61,14 @@ depends() {
 installkernel() {
     instmods nvme_fc lpfc qla2xxx
     hostonly="" instmods nvme_tcp nvme_fabrics 8021q
+    # lookup NIC kernel modules for active NBFT interfaces
+    if [[ $hostonly ]]; then
+        for i in /sys/class/net/nbft*; do
+            [ -d "$i" ] || continue
+            _driver=$(basename "$(readlink -f "$i/device/driver/module")")
+            [ -z "$_driver" ] || instmods "$_driver"
+        done
+    fi
 }
 
 # called by dracut
