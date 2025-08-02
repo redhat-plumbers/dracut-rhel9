@@ -6,142 +6,142 @@
 set -xe
 zsh -n "$0"
 
-[[ -z "$EDITOR" ]] && EDITOR=nano
+[[ -z $EDITOR ]] && EDITOR=nano
 
 : "OPT: continue after solving cherry-pick conflict"
-[[ "$1" == "-c" ]] && {
-  {
-    shift ||:
-  } 2>/dev/null
-  CON=y
-  :
+[[ $1 == "-c" ]] && {
+    {
+        shift || :
+    } 2> /dev/null
+    CON=y
+    :
 } || CON=
 
 : "OPT: delete conflicting branch"
-[[ "$1" == "-d" ]] && {
-  {
-    shift ||:
-  } 2>/dev/null
-  DEL=y
-  :
+[[ $1 == "-d" ]] && {
+    {
+        shift || :
+    } 2> /dev/null
+    DEL=y
+    :
 } || DEL=
 
 : "OPT: Fedora distro"
-[[ "$1" == "-f" ]] && {
-  {
-    shift ||:
-  } 2>/dev/null
-  FED=y
-  :
+[[ $1 == "-f" ]] && {
+    {
+        shift || :
+    } 2> /dev/null
+    FED=y
+    :
 } || FED=
 
 : "OPT: local changes only"
-[[ "$1" == "-l" ]] && {
-  {
-    shift ||:
-  } 2>/dev/null
-  LOC=y
+[[ $1 == "-l" ]] && {
+    {
+        shift || :
+    } 2> /dev/null
+    LOC=y
 
 } || LOC=
 
 : "OPT: expect ref (commit-ish to get commits from) instead of PR #"
-[[ "$1" == "-r" ]] && {
-  {
-    shift ||:
-  } 2>/dev/null
-  REF=y
+[[ $1 == "-r" ]] && {
+    {
+        shift || :
+    } 2> /dev/null
+    REF=y
 
 } || REF=
 
 : "OPT: skip already applied commits"
-[[ "$1" == "-s" ]] && {
-  SKI="$2"
-  {
-    shift 2 ||:
-  } 2>/dev/null
-  :
+[[ $1 == "-s" ]] && {
+    SKI="$2"
+    {
+        shift 2 || :
+    } 2> /dev/null
+    :
 } || SKI=0
 
 : 'No more opts (check order)'
 {
-  [[ -n "$1" ]] && [[ "${1:0:1}" == "-" ]] && exit 4
+    [[ -n $1 ]] && [[ ${1:0:1} == "-" ]] && exit 4
 
-} 2>/dev/null
+} 2> /dev/null
 
-{ echo ; } 2>/dev/null
+{ echo; } 2> /dev/null
 
 : 'DISTRO version #'
 rv="${1}"
 {
-  [[ -n "$rv" ]]
-  shift
-} 2>/dev/null
+    [[ -n $rv ]]
+    shift
+} 2> /dev/null
 
 : 'Jira issue #'
 bn="${1}"
 {
-  [[ -n "$bn" ]]
-  shift ||:
-} 2>/dev/null
+    [[ -n $bn ]]
+    shift || :
+} 2> /dev/null
 
 : 'Dracut pull request or REF'
 pr="${1}"
 {
-  [[ -n "${pr}" ]]
-  shift ||:
-} 2>/dev/null
+    [[ -n ${pr} ]]
+    shift || :
+} 2> /dev/null
 
 : 'Commit count'
 cc="${1:-1}"
 {
-  [[ -n "$cc" ]]
-  shift ||:
-} 2>/dev/null
+    [[ -n $cc ]]
+    shift || :
+} 2> /dev/null
 
 : 'Commits origin repo'
 or="${1:-upstream-ng}"
 {
-  [[ -n "$or" ]]
-  shift ||:
-} 2>/dev/null
+    [[ -n $or ]]
+    shift || :
+} 2> /dev/null
 
 : 'No extra arg'
 {
-  [[ -z "$1" ]]
+    [[ -z $1 ]]
 
-} 2>/dev/null
+} 2> /dev/null
 
-{ echo ; } 2>/dev/null
+{ echo; } 2> /dev/null
 
-[[ -z "$FED" ]] && dist=rhel || dist=fedora
+[[ -z $FED ]] && dist=rhel || dist=fedora
 
 remote="${dist}-${rv}"
 
-[[ -z "$REF" ]] && rf="pr${pr}" || rf="${or}/${pr}"
+[[ -z $REF ]] && rf="pr${pr}" || rf="${or}/${pr}"
 
-{ echo ; } 2>/dev/null
+{ echo; } 2> /dev/null
 
-[[ -z "$CON" ]] && {
-  : "Create ${remote}-fix-${bn}?"
-  read '?-->continue?'
+[[ -z $CON ]] && {
+    : "Create ${remote}-fix-${bn}?"
+    read '?-->continue?'
 
-  gitt
-  gitc "${remote}"
+    gitt
+    gitc "${remote}"
 
-  [[ -n "$DEL" ]] && gitbd "${remote}-fix-${bn}" ||:
+    [[ -n $DEL ]] && gitbd "${remote}-fix-${bn}" || :
 
-  gitp "${remote}"
+    gitp "${remote}"
 
-  gitcb "${remote}-fix-${bn}"
+    gitcb "${remote}-fix-${bn}"
 
-  gitrh "${remote}/main"
+    gitrh "${remote}/main"
 
-  [[ -z "$REF" ]] && gitf "${or}" "refs/pull/${pr}/head:${rf}"
+    [[ -z $REF ]] && gitf "${or}" "refs/pull/${pr}/head:${rf}"
 }
 
 : "List Commits"
 cis="$(gitl1 "${rf}" "-${cc}" --reverse | cut -d' ' -f1)"
-[[ -n "${cis}" ]]
+[[ -n ${cis} ]]
 
 com="\nCherry-picked commits:\n${cis}\n"
 
@@ -153,72 +153,72 @@ read '?-->continue?'
 
 i=0
 echo "${cis}" \
-| while read ci; do
-    [[ -n "${ci}" ]] || continue
+    | while read ci; do
+        [[ -n ${ci} ]] || continue
 
-    i=$(($i+1))
+        i=$((i + 1))
 
-    [[ $i -le $SKI ]] && continue
+        [[ $i -le $SKI ]] && continue
 
-    gityx "${ci}" || {
+        gityx "${ci}" || {
 
-      mod="$(gits | grep '^\s*both modified: ')" ||:
+            mod="$(gits | grep '^\s*both modified: ')" || :
 
-      [[ -z "$mod" ]] || {
+            [[ -z $mod ]] || {
 
-        mod="$(echo "$mod" | tr -s ' ' | cut -d' ' -f3)"
+                mod="$(echo "$mod" | tr -s ' ' | cut -d' ' -f3)"
 
-        ls -d $mod
+                ls -d $mod
 
-        $EDITOR $mod
+                $EDITOR $mod
 
-        gita $mod
+                gita $mod
 
-        gitdh
+                gitdh
 
-        gits
+                gits
 
-        exit 2
-      }
+                exit 2
+            }
 
-      gits | grep -q '^nothing to commit' \
-        && {
-          gits | grep 'git cherry-pick --skip'
+            gits | grep -q '^nothing to commit' \
+                && {
+                    gits | grep 'git cherry-pick --skip'
 
-          gity --skip
-          :
-        } || {
+                    gity --skip
+                    :
+                } || {
 
-          gits
+                gits
 
-          exit 3
+                exit 3
+            }
         }
-    }
-  done
+    done
 
 read '?-->continue?'
 
-[[ -z "$CON" ]] && {
-  [[ ${cc} -gt 1 ]] && {
+[[ -z $CON ]] && {
+    [[ ${cc} -gt 1 ]] && {
 
-    gitei HEAD~${cc}
+        gitei HEAD~${cc}
+        :
+    } || {
+
+        gitia --amend
+    }
     :
-  } || {
-
-    gitia --amend
-  }
-  :
 } || {
-  gits | grep -q '^\s*both modified: ' \
-    && gita `gits | grep '^\s*both modified: ' | tr -s ' ' | cut -d' ' -f3`
+    gits | grep -q '^\s*both modified: ' \
+        && gita $(gits | grep '^\s*both modified: ' | tr -s ' ' | cut -d' ' -f3)
 
-  gityc ||:
+    gityc || :
 }
 
-gitl ||:
-gitlp ||:
+gitl || :
+gitlp || :
 
-[[ -z "$LOC" ]] || exit 0
+[[ -z $LOC ]] || exit 0
 
 gituu "${remote}"
 
