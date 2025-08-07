@@ -2,6 +2,8 @@
 #
 # .distro/backport_fix.sh [options] DISTRO_VERSION JIRA_ISSUE DRACUT_PR [COMMIT_COUNT [COMMITS_ORIGIN_REPO]]
 #
+#  Note: fedora support is experimental
+#
 
 set -xe
 zsh -n "$0"
@@ -70,19 +72,21 @@ zsh -n "$0"
 
 { echo; } 2> /dev/null
 
-: 'DISTRO version #'
-rv="${1}"
-{
-    [[ -n $rv ]]
-    shift
-} 2> /dev/null
+[[ -z $FED ]] && {
+    : 'DISTRO version #'
+    rv="${1}"
+    {
+        [[ -n $rv ]]
+        shift
+    } 2> /dev/null
 
-: 'Jira issue #'
-bn="${1}"
-{
-    [[ -n $bn ]]
-    shift || :
-} 2> /dev/null
+    : 'Jira issue #'
+    bn="${1}"
+    {
+        [[ -n $bn ]]
+        shift || :
+    } 2> /dev/null
+}
 
 : 'Dracut pull request or REF'
 pr="${1}"
@@ -113,11 +117,17 @@ or="${1:-upstream-ng}"
 
 { echo; } 2> /dev/null
 
-[[ -z $FED ]] && dist=rhel || dist=fedora
-
-remote="${dist}-${rv}"
+[[ -z $FED ]] && {
+    dist=rhel
+    remote="${dist}-${rv}"
+    :
+} || {
+    dist=fedora
+    remote=main
+}
 
 [[ -z $REF ]] && rf="pr${pr}" || rf="${or}/${pr}"
+[[ -z $bn ]] && bn="${pr}"
 
 { echo; } 2> /dev/null
 
@@ -130,11 +140,17 @@ remote="${dist}-${rv}"
 
     [[ -n $DEL ]] && gitbd "${remote}-fix-${bn}" || :
 
-    gitp "${remote}"
+    [[ -z $FED ]] && {
+        gitp "${remote}"
+        gitcb "${remote}-fix-${bn}"
+        gitrh "${remote}/main"
+        :
+    } || {
 
-    gitcb "${remote}-fix-${bn}"
-
-    gitrh "${remote}/main"
+        gitfo
+        gitcb "backport-fix-${bn}"
+        gitrho
+    }
 
     [[ -z $REF ]] && gitf "${or}" "refs/pull/${pr}/head:${rf}"
 }
@@ -145,7 +161,9 @@ cis="$(gitl1 "${rf}" "-${cc}" --reverse | cut -d' ' -f1)"
 
 com="\nCherry-picked commits:\n${cis}\n"
 
-com="${com}\nResolves: RHEL-${bn}\n"
+[[ -z $FED ]] && {
+    com="${com}\nResolves: RHEL-${bn}\n"
+}
 
 echo -e "${com}"
 
@@ -220,6 +238,13 @@ gitlp || :
 
 [[ -z $LOC ]] || exit 0
 
-gituu "${remote}"
+[[ -z $FED ]] && {
+    gituu "${remote}"
+    :
+
+} || {
+    gituu
+
+}
 
 gh pr create -f -a '@me' -R "redhat-plumbers/dracut-rhel${rv}"
