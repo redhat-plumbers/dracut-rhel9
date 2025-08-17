@@ -18,7 +18,7 @@ depends() {
 
 installkernel() {
     hostonly='' instmods autofs4 ipv6 algif_hash hmac sha256 sg
-    instmods -s efivarfs overlay
+    hostonly=$(optional_hostonly) instmods -s efivarfs overlay
 }
 
 # called by dracut
