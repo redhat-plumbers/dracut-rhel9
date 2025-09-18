@@ -1,4 +1,4 @@
-#!/usr/bin/zsh
+#!/usr/bin/env zsh
 #
 # .distro/backport_fix.sh [options] DISTRO_VERSION JIRA_ISSUE DRACUT_PR [COMMIT_COUNT [COMMITS_ORIGIN_REPO]]
 #
@@ -184,7 +184,7 @@ echo "${cis}" \
 
             [[ -z $mod ]] || {
 
-                mod="$(echo "$mod" | tr -s ' ' | cut -d' ' -f3)"
+                mod=$(echo -e "$mod" | tr -s ' ' | cut -d' ' -f3)
 
                 ls -d $mod
 
