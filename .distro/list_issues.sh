@@ -122,4 +122,4 @@ echo "$ln"
 echo
 #tr -s ',' '\n' <<< "$res" | sed -e 's/^/Resolves: /g'
 
-echo "$res"| grep -E "$gr"
+echo "$res"| grep -E "$gr" | sort -u
