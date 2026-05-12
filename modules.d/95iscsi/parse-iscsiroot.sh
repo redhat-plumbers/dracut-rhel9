@@ -87,7 +87,7 @@ if [ -n "$iscsi_firmware" ]; then
     echo "${DRACUT_SYSTEMD+systemctl is-active initrd-root-device.target || }[ -f '/tmp/iscsistarted-firmware' ]" > "$hookdir"/initqueue/finished/iscsi_started.sh
     initqueue --unique --online /sbin/iscsiroot online "iscsi:" "$NEWROOT"
     initqueue --unique --onetime --timeout /sbin/iscsiroot timeout "iscsi:" "$NEWROOT"
-    initqueue --unique --onetime --settled /sbin/iscsiroot online "iscsi:" "'$NEWROOT'"
+    initqueue --unique --onetime --settled /sbin/iscsiroot online "iscsi:" "$NEWROOT"
 fi
 
 # ISCSI actually supported?
@@ -99,7 +99,7 @@ modprobe --all -b -q qla4xxx cxgb3i cxgb4i bnx2i be2iscsi
 
 if [ -n "$netroot" ] && [ "$root" != "/dev/root" ] && [ "$root" != "dhcp" ]; then
     if ! getargbool 1 rd.neednet > /dev/null || ! getarg "ip="; then
-        initqueue --unique --onetime --settled /sbin/iscsiroot dummy "'$netroot'" "'$NEWROOT'"
+        initqueue --unique --onetime --settled /sbin/iscsiroot dummy "$netroot" "$NEWROOT"
     fi
 fi
 
