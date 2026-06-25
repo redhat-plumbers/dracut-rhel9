@@ -112,14 +112,14 @@ res="$(
 
 # 80
 ln='-------------------------------------------------------------------------------'
+
 echo "$ln"
 echo "$lst"
 
-isu="$(echo "$res"| grep -E "$gr" | cut -d' ' -f2 | sort -u | xargs -ri echo -n '{},')"
+res="$(echo "$res" | grep -E "$gr" | sort -u)"
+isu="$(echo "$res" | cut -d' ' -f2 | sort -u | xargs -ri echo -n '{},')"
 
-echo "  Resolves: ${isu%,}"
-echo "$ln"
-echo
-#tr -s ',' '\n' <<< "$res" | sed -e 's/^/Resolves: /g'
+echo -e "\n  Resolves: ${isu%,}"
+echo -e "${ln}\n"
 
-echo "$res"| grep -E "$gr"
+echo "$res" | sed -e 's/$/\n/g'
