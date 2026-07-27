@@ -81,7 +81,7 @@ res="$(
   echo "$res" | grep -E "^Missing" | cut -d' ' -f2 \
     | while read c; do
       m="$(grep -E "^$c " <<< "$all" | cut -d' ' -f2-)"
-      echo "$m" | grep -qE '^(build|ci|chore|test): ' || {
+      echo "$m" | grep -qE '^(build|ci|chore|test)' || {
         echo "FAIL: $m"
         gith "$c" | cat
         echo
