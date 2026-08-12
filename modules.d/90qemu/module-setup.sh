@@ -19,4 +19,7 @@ installkernel() {
         virtio_scsi virtio_console virtio_rng virtio_mem \
         spapr-vscsi \
         qemu_fw_cfg
+
+    # needed for displaying console properly
+    hostonly='' instmods bochs
 }
